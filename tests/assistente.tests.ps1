@@ -1,9 +1,12 @@
 ﻿# Testes do assistente-wpp, sem WhatsApp de verdade: tudo roda num diretório temporário e contra um gateway MCP
 # falso (fake-mcp.ps1). Saída: uma linha por teste; código 1 se algum falhar.
-#   powershell -NoProfile -ExecutionPolicy Bypass -File tests\assistente.tests.ps1
+#   Windows: powershell -NoProfile -ExecutionPolicy Bypass -File tests\assistente.tests.ps1
+#   macOS:   pwsh -NoProfile -File tests/assistente.tests.ps1
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $scripts = Join-Path $repo 'skills\assistente-wpp\scripts'
+. (Join-Path $scripts 'plataforma.ps1')
+$Ps = Get-PsExe   # powershell.exe no Windows, pwsh no Mac: o mesmo que o assistente usa
 $AssistScript = Join-Path $scripts 'assistente.ps1'
 $vigia = Join-Path $scripts 'assistente-vigia.ps1'
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ('assistente-tests-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -24,7 +27,7 @@ function Check([string]$Name, [bool]$Ok, [string]$Got = '') {
     if ($Ok) { Write-Output "ok    $Name" } else { Write-Output "FALHA $Name  -> $Got"; $script:fails++ }
 }
 function Run([string[]]$ArgList) {
-    $out = & powershell -NoProfile -ExecutionPolicy Bypass -File $AssistScript @ArgList
+    $out = & $Ps -NoProfile -ExecutionPolicy Bypass -File $AssistScript @ArgList
     [pscustomobject]@{ Out = ($out -join "`n"); Rc = $LASTEXITCODE }
 }
 function J($r) { try { $r.Out | ConvertFrom-Json } catch { $null } }
@@ -36,7 +39,7 @@ try {
     $bad = @(Get-ChildItem -LiteralPath $repo -Recurse -File | Where-Object { $_.Extension -eq '.ps1' } | Where-Object {
             $b = [IO.File]::ReadAllBytes($_.FullName); -not ($b.Length -ge 3 -and $b[0] -eq 0xEF -and $b[1] -eq 0xBB -and $b[2] -eq 0xBF) })
     Check 'repo: todo .ps1 tem BOM UTF-8 (Windows PowerShell 5.1 lê acentos certo)' ($bad.Count -eq 0) (($bad | ForEach-Object { $_.Name }) -join ', ')
-    $leak = @(Get-ChildItem -LiteralPath $repo -Recurse -File | Where-Object { $_.FullName -notmatch '\\\.git\\' } |
+    $leak = @(Get-ChildItem -LiteralPath $repo -Recurse -File | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } |
         Select-String -Pattern '\d{12,13}@s\.whatsapp\.net' | Where-Object { $_.Line -notmatch '\b5500\d{8,9}@|\b120363000000' })
     Check 'repo: nenhum número de telefone real' ($leak.Count -eq 0) (($leak | ForEach-Object { "$($_.Filename):$($_.LineNumber)" }) -join ', ')
 
@@ -53,7 +56,7 @@ try {
             $okR = (($r.Rc -eq 2) -and ((Reason $r) -match 'nome_reservado|nome_so_com'))
             if (-not $okR) { $resFails++; Write-Output "      variante nº $([array]::IndexOf($variants, $n)) passou: $(Reason $r)" }
         }
-        $hits = @(Get-ChildItem -LiteralPath $repo -Recurse -File | Where-Object { $_.FullName -notmatch '\\\.git\\' } | Select-String -SimpleMatch $w)
+        $hits = @(Get-ChildItem -LiteralPath $repo -Recurse -File | Where-Object { $_.FullName -notmatch '[\\/]\.git[\\/]' } | Select-String -SimpleMatch $w)
         Check "repo: nome reservado nº $([array]::IndexOf($reserved, $w) + 1) não aparece em nenhum arquivo" ($hits.Count -eq 0) (($hits | ForEach-Object { "$($_.Filename):$($_.LineNumber)" }) -join ', ')
     }
     if ($reserved.Count -gt 0) { Check 'nome: variantes dos nomes reservados são recusadas' ($resFails -eq 0) }
@@ -148,7 +151,7 @@ try {
     Check 'help: com o app fechado, mostra a conexão inativa e não quebra' (($ho -match 'Manual de Jarvis') -and ($ho -match '\[inativo\] App WhatsApp MCP')) $ho
     Check 'help: fuso padrão GMT-3, o mesmo do time' ($ho -match '\[ativo\]\s+Fuso dos horários: GMT-3, o mesmo do time') $ho
     Check 'help: gênero opcional, neutro sem escolha' ($ho -match '\[inativo\] Gênero do assistente \(opcional\): não definido: formas neutras') $ho
-    Check 'help: explica onde roda e como desativar' (($ho -match '\[ativo\]\s+Windows: onde roda: neste PC') -and ($ho -match 'computador de trabalho') -and ($ho -match 'em dobro')) $ho
+    Check 'help: explica onde roda e como desativar' (($ho -match '\[ativo\]\s+(Windows: onde roda: neste PC|macOS: onde roda: neste Mac)') -and ($ho -match 'computador de trabalho') -and ($ho -match 'em dobro')) $ho
 
     # --- gênero e personalidades só com o dono ---
     $gr = Run @('setup', '-Genero', 'feminino')
@@ -200,7 +203,7 @@ try {
         $avDir = Join-Path $tmp 'state\avisos'; New-Item -ItemType Directory -Force -Path $avDir | Out-Null
         [IO.File]::WriteAllText((Join-Path $avDir "turno-$sid.txt"), [string]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - 125))
         $env:CLAUDE_CODE_ENTRYPOINT = $Ep
-        $o = $hookIn | & powershell -NoProfile -ExecutionPolicy Bypass -File $aviso -DryRun @More
+        $o = $hookIn | & $Ps -NoProfile -ExecutionPolicy Bypass -File $aviso -DryRun @More
         $env:CLAUDE_CODE_ENTRYPOINT = $null
         $o -join "`n"
     }
@@ -222,9 +225,9 @@ try {
     Check 'aviso: execução do despachante não avisa' (-not $a) $a
     $avDir = Join-Path $tmp 'state\avisos'
     [IO.File]::WriteAllText((Join-Path $avDir "turno-$sid.txt"), [string]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - 20))
-    $a = ($hookIn | & powershell -NoProfile -ExecutionPolicy Bypass -File $aviso -DryRun) -join "`n"
+    $a = ($hookIn | & $Ps -NoProfile -ExecutionPolicy Bypass -File $aviso -DryRun) -join "`n"
     Check 'aviso: turno curto (20 s) não avisa' (-not $a) $a
-    $a = ((@{ session_id = $sid; transcript_path = $tpath; cwd = 'C:\dev\projeto-x'; notification_type = 'permission_prompt' } | ConvertTo-Json -Compress) | & powershell -NoProfile -ExecutionPolicy Bypass -File $aviso -Mode wait -DryRun) -join "`n"
+    $a = ((@{ session_id = $sid; transcript_path = $tpath; cwd = 'C:\dev\projeto-x'; notification_type = 'permission_prompt' } | ConvertTo-Json -Compress) | & $Ps -NoProfile -ExecutionPolicy Bypass -File $aviso -Mode wait -DryRun) -join "`n"
     Check 'aviso: espera de autorização' ($a -match 'está esperando sua autorização') $a
 
     # --- instalador: hooks no settings.json sem tocar nos do usuário ---
@@ -232,16 +235,46 @@ try {
     $sj = Join-Path $inst 'settings.json'
     [IO.File]::WriteAllText($sj, '{"model":"x","hooks":{"Stop":[{"hooks":[{"type":"command","command":"meu-hook.exe"}]}]}}', $utf8)
     $ia = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repo 'install.ps1'), '-SemVigia', '-SkillsRoot', (Join-Path $inst 'skills'), '-PrivateDir', (Join-Path $inst 'priv'), '-ClaudeSettings', $sj)
-    $null = & powershell @ia
-    $null = & powershell @ia
+    $null = & $Ps @ia
+    $null = & $Ps @ia
     $st = Get-Content -Raw $sj | ConvertFrom-Json
-    function Count-Ours($ev) { @(@($st.hooks.$ev) | ForEach-Object { $_.hooks } | Where-Object { (@($_.args) -join ' ') -like '*assistente-wpp\scripts\aviso-sessao*' }).Count }
+    function Count-Ours($ev) { @(@($st.hooks.$ev) | ForEach-Object { $_.hooks } | Where-Object { (@($_.args) -join ' ') -match 'assistente-wpp[\\/]scripts[\\/]aviso-sessao' }).Count }
     Check 'instalador: registra um hook de cada (idempotente em duas rodadas)' ((Count-Ours 'Stop') -eq 1 -and (Count-Ours 'UserPromptSubmit') -eq 1 -and (Count-Ours 'Notification') -eq 1 -and (Count-Ours 'PreToolUse') -eq 1) (Get-Content -Raw $sj)
     Check 'instalador: mantém o hook e as chaves do usuário' ((@($st.hooks.Stop | ForEach-Object { $_.hooks } | Where-Object { $_.command -eq 'meu-hook.exe' }).Count -eq 1) -and ($st.model -eq 'x'))
     Check 'instalador: copia a skill com manifesto' ((Test-Path (Join-Path $inst 'skills\assistente-wpp\SKILL.md')) -and (Test-Path (Join-Path $inst 'skills\assistente-wpp\.install-manifest.json')))
-    $null = & powershell ($ia + '-SemAvisoSessao')
+    $ourCmds = @(@('Stop', 'UserPromptSubmit', 'Notification', 'PreToolUse') | ForEach-Object { @($st.hooks.$_) } | ForEach-Object { $_.hooks } | Where-Object { (@($_.args) -join ' ') -match 'aviso-sessao' } | ForEach-Object { $_.command } | Select-Object -Unique)
+    Check 'instalador: os hooks chamam o PowerShell desta plataforma (powershell.exe / pwsh)' (($ourCmds.Count -eq 1) -and ($ourCmds[0] -eq $Ps)) ($ourCmds -join ', ')
+    $null = & $Ps ($ia + '-SemAvisoSessao')
     $st = Get-Content -Raw $sj | ConvertFrom-Json
     Check 'instalador: -SemAvisoSessao tira só os nossos' (((Count-Ours 'Stop') + (Count-Ours 'UserPromptSubmit') + (Count-Ours 'Notification') + (Count-Ours 'PreToolUse')) -eq 0 -and (@($st.hooks.Stop | ForEach-Object { $_.hooks } | Where-Object { $_.command -eq 'meu-hook.exe' }).Count -eq 1)) (Get-Content -Raw $sj)
+
+    # --- instalador no Mac: LaunchAgent do vigia e -Remover (numa pasta de teste: sem launchctl, sem tocar no real) ---
+    if ($EhMac) {
+        $im = Join-Path $tmp 'inst-mac'; New-Item -ItemType Directory -Force -Path $im | Out-Null
+        $sjm = Join-Path $im 'settings.json'
+        [IO.File]::WriteAllText($sjm, '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"meu-hook.sh"}]}]}}', $utf8)
+        $la = Join-Path $im 'LaunchAgents'
+        $iam = @('-NoProfile', '-File', (Join-Path $repo 'install.ps1'), '-SkillsRoot', (Join-Path $im 'skills'), '-PrivateDir', (Join-Path $im 'priv'), '-ClaudeSettings', $sjm, '-LaunchAgentsDir', $la)
+        $o = (& $Ps @iam | Out-String)
+        $pl = Join-Path $la 'local.assistente-wpp.vigia.plist'
+        $plOk = (Test-Path -LiteralPath $pl) -and ((& /usr/bin/plutil -lint $pl | Out-String) -match 'OK')
+        Check 'mac: instalador grava o LaunchAgent do vigia, e o plist é válido' $plOk $o
+        $pj = if ($plOk) { (& /usr/bin/plutil -convert json -o - $pl | Out-String) | ConvertFrom-Json } else { $null }
+        Check 'mac: LaunchAgent no login e a cada 3 min, pelo pwsh, sem derrubar o despachante' ($pj -and $pj.RunAtLoad -and $pj.StartInterval -eq 180 -and $pj.AbandonProcessGroup -and $pj.ProgramArguments[0] -eq $Ps -and $pj.ProgramArguments[-1] -eq (Join-Path $im 'skills/assistente-wpp/scripts/assistente-vigia.ps1') -and $pj.EnvironmentVariables.PATH -match '/opt/homebrew/bin|/usr/local/bin') ($pj | ConvertTo-Json -Depth 4 -Compress)
+        $o = (& $Ps ($iam + '-Remover') | Out-String)
+        $stm = Get-Content -Raw $sjm | ConvertFrom-Json
+        $restam = @($stm.hooks.PSObject.Properties | ForEach-Object { @($_.Value) } | ForEach-Object { $_.hooks } | Where-Object { (@($_.args) -join ' ') -match 'aviso-sessao' }).Count
+        # Processo solto (nohup), achado pela linha de comando e derrubado com a árvore: o que o despachante usa no Mac.
+        $sl = Join-Path $im 'dorme.ps1'
+        [IO.File]::WriteAllText($sl, "Start-Sleep -Seconds 60`n", (New-Object Text.UTF8Encoding $true))
+        Start-Solto $sl @('-Marca', 'x')
+        $pp = $null
+        foreach ($i in 1..30) { $pp = @(Get-ProcessosPowerShell | Where-Object { $_.CommandLine -match [regex]::Escape($sl) })[0]; if ($pp) { break }; Start-Sleep -Milliseconds 300 }
+        Check 'mac: Start-Solto sobe o pwsh solto e a linha de comando o acha' ($pp -and ((Get-LinhaDeComando $pp.ProcessId) -match 'dorme\.ps1')) ($pp | ConvertTo-Json -Compress)
+        if ($pp) { Stop-Arvore $pp.ProcessId; Start-Sleep -Milliseconds 500 }
+        Check 'mac: Stop-Arvore derruba o processo' ($pp -and -not (Get-LinhaDeComando $pp.ProcessId))
+        Check 'mac: -Remover tira o LaunchAgent, os hooks e a skill, e mantém o hook do usuário' ((-not (Test-Path -LiteralPath $pl)) -and (-not (Test-Path (Join-Path $im 'skills/assistente-wpp'))) -and $restam -eq 0 -and (@($stm.hooks.Stop | ForEach-Object { $_.hooks } | Where-Object { $_.command -eq 'meu-hook.sh' }).Count -eq 1)) $o
+    }
 
     # --- gateway falso: detector e vigia de ponta a ponta ---
     $fake = Join-Path $tmp 'fake'; New-Item -ItemType Directory -Force -Path $fake | Out-Null
@@ -250,7 +283,7 @@ try {
     function Wait-Until([scriptblock]$Cond, [int]$Seconds = 20) { $end = (Get-Date).AddSeconds($Seconds); while ((Get-Date) -lt $end) { if (& $Cond) { return $true }; Start-Sleep -Milliseconds 300 }; $false }
     $probe = New-Object Net.Sockets.TcpListener ([Net.IPAddress]::Loopback, 0); $probe.Start(); $port = $probe.LocalEndpoint.Port; $probe.Stop()
     Set-Responses @{}
-    $fakeProc = Start-Process powershell -NoNewWindow -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $PSScriptRoot 'fake-mcp.ps1')`"", '-Port', $port, '-Dir', "`"$fake`"")
+    $fakeProc = Start-Process $Ps -NoNewWindow -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $PSScriptRoot 'fake-mcp.ps1')`"", '-Port', $port, '-Dir', "`"$fake`"")
     try {
         Check 'gateway falso: subiu' (Wait-Until { Test-Path -LiteralPath (Join-Path $fake 'ready') } 15)
         $env:ASSISTENTE_MCP_URL = "http://127.0.0.1:$port/mcp"
@@ -301,7 +334,7 @@ try {
 
         # Manual (help): estado real de cada funcionalidade
         $env:CLAUDE_CONFIG_DIR = $inst
-        $null = & powershell @ia   # hooks de volta no settings.json de teste
+        $null = & $Ps @ia   # hooks de volta no settings.json de teste
         $hp = (Run @('help')).Out
         Check 'help: título com o nome do assistente' ($hp -match 'Manual de Jarvis') $hp
         Check 'help: app conectado aparece ativo' ($hp -match '\[ativo\]\s+App WhatsApp MCP: conta \*\*\*\*0100 conectada') $hp
@@ -320,7 +353,7 @@ try {
         # Vigia
         function Set-Hb([int]$AgeMin) { [IO.File]::WriteAllText((Join-Path $tmp 'state\watch-heartbeat.json'), ('{"ts":"' + (IsoAgo $AgeMin) + '","pid":1,"gateway_ok":true}'), $utf8) }
         function Set-VigiaState([string]$Since, [int]$Alerts, [int]$Runs) { $ss = if ($Since) { '"' + $Since + '"' } else { 'null' }; [IO.File]::WriteAllText((Join-Path $tmp 'state\vigia-estado.json'), ('{"stale_since":' + $ss + ',"last_alert":null,"alerts":' + $Alerts + ',"stale_runs":' + $Runs + ',"last_run":"' + (IsoAgo 3) + '"}'), $utf8) }
-        function Run-Vigia { $null = & powershell -NoProfile -ExecutionPolicy Bypass -File $vigia; $LASTEXITCODE }
+        function Run-Vigia { $null = & $Ps -NoProfile -ExecutionPolicy Bypass -File $vigia; $LASTEXITCODE }
         function Sends { @(Get-Requests | Where-Object { $_.tool -eq 'send_text_message' }) }
         $n0 = @(Sends).Count
         Set-Hb 10; Set-VigiaState '' 0 1

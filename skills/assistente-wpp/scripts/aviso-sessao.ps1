@@ -16,7 +16,8 @@
 param([ValidateSet('stop', 'wait', 'bgwait')][string]$Mode = 'stop', [int]$WaitSeconds = 60, [int]$IdleSeconds = 600, [int]$MaxSeconds = 43200, [string]$HoldFile, [switch]$DryRun)
 
 $Utf8 = New-Object Text.UTF8Encoding $false
-$HomeDir = if ($env:ASSISTENTE_HOME) { $env:ASSISTENTE_HOME } else { Join-Path $env:USERPROFILE '.assistente-wpp' }
+. (Join-Path $PSScriptRoot 'plataforma.ps1')
+$HomeDir = if ($env:ASSISTENTE_HOME) { $env:ASSISTENTE_HOME } else { Join-Path $HOME '.assistente-wpp' }
 $cfg = @{}
 $cfgFile = if ($env:ASSISTENTE_CONFIG_FILE) { $env:ASSISTENTE_CONFIG_FILE } else { Join-Path $HomeDir 'assistente.env' }
 if (Test-Path -LiteralPath $cfgFile) {
@@ -115,6 +116,10 @@ else {
         if ($DryRun) { exit 0 }
         $holdObj = [ordered]@{ nonce = [guid]::NewGuid().ToString('N'); start = $startRaw; kinds = $kinds; entrypoint = [string]$env:CLAUDE_CODE_ENTRYPOINT; data = $data }
         try { [IO.File]::WriteAllText($holdPath, ($holdObj | ConvertTo-Json -Depth 8 -Compress), $Utf8) } catch { Fail "não gravou o aviso adiado: $_" }
+        if (-not $EhWindows) {
+            try { Start-Solto $PSCommandPath @('-Mode', 'bgwait', '-HoldFile', $holdPath, '-IdleSeconds', "$IdleSeconds", '-MaxSeconds', "$MaxSeconds") } catch { Fail "vigia do background não subiu: $_" }
+            exit 0
+        }
         $cmd = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}" -Mode bgwait -HoldFile "{1}" -IdleSeconds {2} -MaxSeconds {3}' -f $PSCommandPath, $holdPath, $IdleSeconds, $MaxSeconds
         try {
             $si = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
@@ -189,7 +194,7 @@ $scripts = $PSScriptRoot
 $notify = Get-Cfg 'ASSISTENTE_AVISO_JID' (Get-Cfg 'ASSISTENTE_CONTA_JID')
 if (-not $notify) { Fail 'assistente não configurado (sem ASSISTENTE_CONTA_JID)' }
 try {
-    $st = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scripts 'assistente-despachante.ps1') -Mode status | Out-String | ConvertFrom-Json
+    $st = & (Get-PsExe) -NoProfile -ExecutionPolicy Bypass -File (Join-Path $scripts 'assistente-despachante.ps1') -Mode status | Out-String | ConvertFrom-Json
     $token = [long]$st.token
 } catch { Fail "status do despachante falhou: $_" }
 if ($token -le 0) { Fail 'despachante sem volante (parado?)' }

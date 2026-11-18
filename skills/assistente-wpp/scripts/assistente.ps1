@@ -52,6 +52,7 @@ $ErrorActionPreference = 'Stop'
 $script:Rc = 1
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 $Utf8 = New-Object Text.UTF8Encoding $false
+. (Join-Path $PSScriptRoot 'plataforma.ps1')
 
 # ---------- configuração ----------
 
@@ -68,7 +69,7 @@ function Read-EnvFile([string]$Path) {
     $cfg
 }
 
-$HomeDir = if ($env:ASSISTENTE_HOME) { $env:ASSISTENTE_HOME } else { Join-Path $env:USERPROFILE '.assistente-wpp' }
+$HomeDir = if ($env:ASSISTENTE_HOME) { $env:ASSISTENTE_HOME } else { Join-Path $HOME '.assistente-wpp' }
 $ConfigPath = if ($env:ASSISTENTE_CONFIG_FILE) { $env:ASSISTENTE_CONFIG_FILE } else { Join-Path $HomeDir 'assistente.env' }
 $FileCfg = Read-EnvFile $ConfigPath
 function Get-Cfg([string]$Key, [string]$Default = '') {
@@ -81,7 +82,7 @@ function Get-Cfg([string]$Key, [string]$Default = '') {
 $StateDir = Get-Cfg 'ASSISTENTE_STATE_DIR' (Join-Path $HomeDir 'state')
 New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
 $SkillDir = Split-Path $PSScriptRoot -Parent
-$PresetDir = Join-Path $SkillDir 'references\personalidades'
+$PresetDir = Join-Path (Join-Path $SkillDir 'references') 'personalidades'
 
 $AssistantName = Get-Cfg 'ASSISTENTE_NOME'
 $OwnerName = Get-Cfg 'ASSISTENTE_DONO'
@@ -740,22 +741,35 @@ function Get-HelpReport {
     $paused = Test-Path -LiteralPath $PausePath
     Add-Item 'Funcionamento' 'Ligado' $(if ($paused) { 'inativo' } else { 'ativo' }) $(if ($paused) { 'pausado por você' } else { 'não pausado' }) '"desliga meu assistente" / "religa meu assistente"'
     $dRun = $false
-    try { $null = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'assistente-despachante.ps1') -Mode status 2>$null; $dRun = ($LASTEXITCODE -eq 0) } catch { }
+    try { $null = & (Get-PsExe) -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'assistente-despachante.ps1') -Mode status 2>$null; $dRun = ($LASTEXITCODE -eq 0) } catch { }
     Add-Item 'Funcionamento' 'Despachante (sem sessão aberta)' $(if ($dRun) { 'ativo' } else { 'inativo' }) $(if ($dRun) { 'abre o Claude a cada lote de mensagens' } else { 'parado: ninguém é atendido' }) 'o vigia sobe sozinho em até 3 min; ou "assistente-despachante.ps1 -Mode start"'
     $hb = Get-Heartbeat 120
     Add-Item 'Funcionamento' 'Detector de mensagens' $(if ($hb.status -eq 'ok') { 'ativo' } elseif ($hb.status -eq 'gateway_fora') { 'atenção' } else { 'inativo' }) "batimento: $($hb.status)" 'sobe junto com o despachante'
-    $task = $null; try { $task = Get-ScheduledTask -TaskName 'AssistenteWppVigia' -ErrorAction Stop } catch { }
-    Add-Item 'Funcionamento' 'Vigia (Agendador do Windows)' $(if ($task -and $task.State -ne 'Disabled') { 'ativo' } else { 'inativo' }) $(if ($task) { "tarefa AssistenteWppVigia: $($task.State)" } else { 'tarefa não registrada' }) 'rodar o install.ps1 de novo'
+    if ($EhMac) {
+        $la = $false; try { $la = Test-VigiaMac } catch { }
+        Add-Item 'Funcionamento' 'Vigia (LaunchAgent do macOS)' $(if ($la) { 'ativo' } else { 'inativo' }) $(if ($la) { "LaunchAgent $VigiaRotulo carregado" } else { 'LaunchAgent não carregado' }) 'rodar o install.ps1 de novo (pwsh ./install.ps1)'
+    }
+    else {
+        $task = $null; try { $task = Get-ScheduledTask -TaskName 'AssistenteWppVigia' -ErrorAction Stop } catch { }
+        Add-Item 'Funcionamento' 'Vigia (Agendador do Windows)' $(if ($task -and $task.State -ne 'Disabled') { 'ativo' } else { 'inativo' }) $(if ($task) { "tarefa AssistenteWppVigia: $($task.State)" } else { 'tarefa não registrada' }) 'rodar o install.ps1 de novo'
+    }
 
-    $cfgDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $env:USERPROFILE '.claude' }
+    $cfgDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME '.claude' }
     $hooksOn = $false
-    try { $hooksOn = (Get-Content -LiteralPath (Join-Path $cfgDir 'settings.json') -Raw -Encoding UTF8) -match 'assistente-wpp\\\\scripts\\\\aviso-sessao' } catch { }
+    try { $hooksOn = (Get-Content -LiteralPath (Join-Path $cfgDir 'settings.json') -Raw -Encoding UTF8) -match 'assistente-wpp(\\\\|/)scripts(\\\\|/)aviso-sessao' } catch { }
     $avisoCfg = (Get-Cfg 'ASSISTENTE_AVISO_SESSAO' '1') -ne '0'
     $ed = Get-Cfg 'ASSISTENTE_AVISO_EDITOR' 'auto'
     Add-Item 'Aviso de sessão' 'Avisar quando uma sessão para e espera você' $(if ($hooksOn -and $avisoCfg) { 'ativo' } else { 'inativo' }) ("turno de $(Get-Cfg 'ASSISTENTE_AVISO_MIN_SEG' '60') s ou mais, autorização ou pergunta pendente; editor: $ed" + $(if (-not $hooksOn) { '; hooks não registrados' } elseif (-not $avisoCfg) { '; desligado no .env' } else { '' })) 'ASSISTENTE_AVISO_SESSAO=1|0 no .env; hooks: install.ps1 (ou -SemAvisoSessao)'
     Add-Item 'Aviso de sessão' 'Link de volta à sessão' $(if ($hooksOn -and $avisoCfg) { 'ativo' } else { 'inativo' }) 'VS Code: link; terminal: claude --resume; T3 Code: título e pasta; Remote Control: link do celular' 'ASSISTENTE_AVISO_EDITOR=auto|vscode|cli|t3 ou ASSISTENTE_AVISO_LINK com {session}'
-    Add-Item 'Plataforma' 'Windows: onde roda' $(if ($paused) { 'inativo' } else { 'ativo' }) "neste PC ($env:COMPUTERNAME), sempre que você está logado nele: o vigia religa sozinho no logon e a cada 3 min. Ligue em um computador só por conta de WhatsApp, ou ele responde em dobro" 'para não rodar aqui: "desliga meu assistente" (fica desligado até você religar, mesmo reiniciando) ou install.ps1 -Remover; depois instale e ligue no computador de trabalho'
-    Add-Item 'Plataforma' 'Mac' 'inativo' 'previsto para a v2' '—'
+    $comoTirar = 'para não rodar aqui: "desliga meu assistente" (fica desligado até você religar, mesmo reiniciando) ou install.ps1 -Remover; depois instale e ligue no computador de trabalho'
+    if ($EhMac) {
+        Add-Item 'Plataforma' 'macOS: onde roda' $(if ($paused) { 'inativo' } else { 'ativo' }) "neste Mac ($(Get-NomeMaquina)), sempre que você está logado nele: o vigia (LaunchAgent) religa sozinho no login e a cada 3 min. Ligue em um computador só por conta de WhatsApp, ou ele responde em dobro" $comoTirar
+        Add-Item 'Plataforma' 'Windows' 'inativo' 'também roda no Windows (Windows PowerShell 5.1); aqui está no Mac' '—'
+    }
+    else {
+        Add-Item 'Plataforma' 'Windows: onde roda' $(if ($paused) { 'inativo' } else { 'ativo' }) "neste PC ($(Get-NomeMaquina)), sempre que você está logado nele: o vigia religa sozinho no logon e a cada 3 min. Ligue em um computador só por conta de WhatsApp, ou ele responde em dobro" $comoTirar
+        Add-Item 'Plataforma' 'Mac' 'inativo' 'também roda no macOS (pwsh, com LaunchAgent); aqui está no Windows' '—'
+    }
     ,$items
 }
 

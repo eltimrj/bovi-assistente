@@ -1,10 +1,11 @@
 ﻿<#
-Vigia do assistente-wpp: roda FORA do Claude (tarefa agendada AssistenteWppVigia, a cada 3 min).
+Vigia do assistente-wpp: roda FORA do Claude, a cada 3 min (Windows: tarefa agendada AssistenteWppVigia;
+macOS: LaunchAgent local.assistente-wpp.vigia).
 
   1. Se o despachante não estiver de pé (e a configuração estiver pronta), sobe.
   2. Lê o batimento que `assistente.ps1 watch` grava a cada ciclo. Se o detector parou ou não lê o
      WhatsApp, avisa o dono: pela conversa de avisos no WhatsApp (se o app responder) e por uma
-     notificação do Windows. Uma vez por episódio, de novo a cada -AlertEveryMinutes, e quando voltar.
+     notificação do sistema (Windows ou macOS). Uma vez por episódio, de novo a cada -AlertEveryMinutes, e quando voltar.
 Não envia nada ao time e não toca no volante (lease). Respeita a pausa (`assistente.ps1 pause on`).
 
   assistente-vigia.ps1 [-MaxAgeSeconds 240] [-AlertEveryMinutes 30] [-DryRun]
@@ -17,6 +18,7 @@ param(
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 $Utf8 = New-Object Text.UTF8Encoding $false
+. (Join-Path $PSScriptRoot 'plataforma.ps1')
 
 function Read-EnvFile([string]$Path) {
     $cfg = @{}
@@ -30,7 +32,7 @@ function Read-EnvFile([string]$Path) {
     }
     $cfg
 }
-$HomeDir = if ($env:ASSISTENTE_HOME) { $env:ASSISTENTE_HOME } else { Join-Path $env:USERPROFILE '.assistente-wpp' }
+$HomeDir = if ($env:ASSISTENTE_HOME) { $env:ASSISTENTE_HOME } else { Join-Path $HOME '.assistente-wpp' }
 $FileCfg = Read-EnvFile $(if ($env:ASSISTENTE_CONFIG_FILE) { $env:ASSISTENTE_CONFIG_FILE } else { Join-Path $HomeDir 'assistente.env' })
 function Get-Cfg([string]$Key, [string]$Default = '') {
     $v = [Environment]::GetEnvironmentVariable($Key)
@@ -86,31 +88,23 @@ function Invoke-Gateway([string]$Tool, [hashtable]$Arguments) {
     $j.result.content[0].text | ConvertFrom-Json
 }
 
-# Notificação do Windows: chega mesmo com o app do WhatsApp fechado.
+# Notificação do sistema (toast do Windows ou notificação do macOS): chega mesmo com o app do WhatsApp fechado.
 function Show-Toast([string]$Text) {
     if ($DryRun -or $env:ASSISTENTE_SEM_TOAST) { return }
-    try {
-        $null = [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
-        $null = [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime]
-        $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
-        $esc = [Security.SecurityElement]::Escape($Text)
-        $xml.LoadXml("<toast><visual><binding template=`"ToastGeneric`"><text>Assistente de WhatsApp</text><text>$esc</text></binding></visual></toast>")
-        $app = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
-        [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($app).Show((New-Object Windows.UI.Notifications.ToastNotification $xml))
-    } catch { Write-Log "notificação do Windows falhou: $($_.Exception.Message)" }
+    try { Show-NotificacaoSistema $Text } catch { Write-Log "notificação do sistema falhou: $($_.Exception.Message)" }
 }
 
-# Aviso ao dono: WhatsApp (conversa de avisos, só se a conta conectada for a esperada) + notificação do Windows.
+# Aviso ao dono: WhatsApp (conversa de avisos, só se a conta conectada for a esperada) + notificação do sistema.
 function Send-Alert([string]$Text) {
     $okAny = $false
     Show-Toast $Text
     if (-not $DryRun -and -not $env:ASSISTENTE_SEM_TOAST) { $okAny = $true }
-    if (-not $Notify -or -not $Name) { Write-Log 'sem ASSISTENTE_AVISO_JID/ASSISTENTE_NOME: aviso só pelo Windows'; return $okAny }
+    if (-not $Notify -or -not $Name) { Write-Log 'sem ASSISTENTE_AVISO_JID/ASSISTENTE_NOME: aviso só pela notificação do sistema'; return $okAny }
     $msg = "*$($Name.Trim()):* $Text"
     if ($DryRun) { Write-Log "DRY-RUN aviso: $msg"; return $true }
     try {
         $linked = (Invoke-Gateway 'whatsapp_status' @{}).wacli.linked_jid
-        if ((Get-PhoneKey $linked) -ne (Get-PhoneKey $Account)) { Write-Log 'conta conectada no app não é a esperada: aviso só pelo Windows'; return $okAny }
+        if ((Get-PhoneKey $linked) -ne (Get-PhoneKey $Account)) { Write-Log 'conta conectada no app não é a esperada: aviso só pela notificação do sistema'; return $okAny }
         $res = Invoke-Gateway 'send_text_message' @{ to = $Notify; text = $msg }
         if ($res.sent) {
             # registra como mensagem do assistente para o detector não tratá-la como pedido do dono
@@ -130,10 +124,10 @@ if (-not $Name -or -not $Account) { Write-Log 'assistente ainda não configurado
 # Sobe o despachante se não estiver de pé.
 $Dispatcher = Join-Path $PSScriptRoot 'assistente-despachante.ps1'
 if ((Get-Cfg 'ASSISTENTE_DESPACHANTE' '1') -ne '0' -and -not $DryRun -and (Test-Path -LiteralPath $Dispatcher)) {
-    $null = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Dispatcher -Mode status 2>$null
+    $null = & (Get-PsExe) -NoProfile -ExecutionPolicy Bypass -File $Dispatcher -Mode status 2>$null
     if ($LASTEXITCODE -ne 0) {
         $env:ASSISTENTE_VIGIA_RUN = '1'   # o start do despachante não chama a tarefa de volta: sobe direto daqui
-        $o = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Dispatcher -Mode start 2>&1 | Out-String).Trim()
+        $o = (& (Get-PsExe) -NoProfile -ExecutionPolicy Bypass -File $Dispatcher -Mode start 2>&1 | Out-String).Trim()
         Write-Log "despachante não estava de pé; subindo: $o"
     }
 }
