@@ -184,6 +184,10 @@ Vale para toda mensagem que o assistente inicia a alguém citado por nome.
 - **Despachante** (`$D`): laço leve que roda o detector e abre `claude -p` (sem tela) a cada lote de mensagens;
   segura o volante e confere os retornos prometidos a cada minuto. `-Mode status | start | stop`.
   Log em `~/.assistente-wpp/state/despachante.log` (só o resumo de cada lote, sem conversa).
+- **Mais rápido:** com `ASSISTENTE_WEBHOOK_PORTA` e `ASSISTENTE_WEBHOOK_SEGREDO` no `.env` (e o webhook cadastrado no
+  app em Configurações › Webhooks, apontando para `http://127.0.0.1:<porta>/`), o detector lê na hora em que a
+  mensagem chega; a consulta a cada 30 s fica de reserva. `ASSISTENTE_CLAUDE_ARGS=--model sonnet` deixa cada lote
+  mais rápido e consome menos do plano.
 - **Vigia** (`scripts/assistente-vigia.ps1`, a cada 3 min: tarefa agendada `AssistenteWppVigia` no Windows, LaunchAgent
   `local.assistente-wpp.vigia` no Mac): sobe o despachante
   se ele cair e avisa o dono (WhatsApp + notificação do sistema) se o detector parar ou não ler o WhatsApp.

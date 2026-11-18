@@ -14,7 +14,7 @@ New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $utf8 = New-Object Text.UTF8Encoding $false
 
 # Isolamento: nada lê a configuração real, nada alcança o app real (porta 9 fechada), nada sobe o despachante.
-$keys = 'ASSISTENTE_HOME', 'ASSISTENTE_CONFIG_FILE', 'ASSISTENTE_STATE_DIR', 'ASSISTENTE_MCP_URL', 'ASSISTENTE_NOME', 'ASSISTENTE_DONO', 'ASSISTENTE_CONTA_JID', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_AUTONOMIA', 'ASSISTENTE_DESPACHANTE', 'ASSISTENTE_SEM_TOAST', 'ASSISTENTE_EQUIPE', 'ASSISTENTE_PERSONA', 'ASSISTENTE_AVISO_SESSAO', 'ASSISTENTE_AVISO_LINK', 'ASSISTENTE_DESPACHADO', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_ENTRYPOINT'
+$keys = 'ASSISTENTE_HOME', 'ASSISTENTE_CONFIG_FILE', 'ASSISTENTE_WEBHOOK_PORTA', 'ASSISTENTE_WEBHOOK_SEGREDO', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_STATE_DIR', 'ASSISTENTE_MCP_URL', 'ASSISTENTE_NOME', 'ASSISTENTE_DONO', 'ASSISTENTE_CONTA_JID', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_AUTONOMIA', 'ASSISTENTE_DESPACHANTE', 'ASSISTENTE_SEM_TOAST', 'ASSISTENTE_EQUIPE', 'ASSISTENTE_PERSONA', 'ASSISTENTE_AVISO_SESSAO', 'ASSISTENTE_AVISO_LINK', 'ASSISTENTE_DESPACHADO', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_ENTRYPOINT'
 $saved = @{}; foreach ($k in $keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $null) }
 $env:ASSISTENTE_HOME = $tmp
 $env:ASSISTENTE_CONFIG_FILE = Join-Path $tmp 'assistente.env'
@@ -337,6 +337,37 @@ try {
         Check 'detector: outra conta no app -> ERRO e nada é lido' (($w.Out -match 'ERRO a conta conectada') -and ($w.Out -notmatch 'EVENT')) $w.Out
         $s = Run @('send', '-Chat', $memberJid, '-Text', 'oi', '-Operator', 'claude', '-Token', $tk, '-DryRun')
         Check 'send: confere a conta conectada no envio' ((Reason $s) -eq 'conta_nao_e_a_configurada') $s.Out
+
+        # Webhook do app: aviso assinado faz o detector ler na hora; assinatura errada é recusada (401) e não lê nada.
+        Set-Responses @{ whatsapp_status = $status; list_chats = @{ text = '{"chats":[]}' } }
+        $probe2 = New-Object Net.Sockets.TcpListener ([Net.IPAddress]::Loopback, 0); $probe2.Start(); $hookPort = $probe2.LocalEndpoint.Port; $probe2.Stop()
+        $env:ASSISTENTE_WEBHOOK_PORTA = "$hookPort"; $env:ASSISTENTE_WEBHOOK_SEGREDO = 'segredo-de-teste'
+        $hookOut = Join-Path $tmp 'watch-hook.out'
+        $hookProc = Start-Process $Ps -PassThru -RedirectStandardOutput $hookOut -RedirectStandardError (Join-Path $tmp 'watch-hook.err') -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$AssistScript`"", 'watch', '-IntervalSeconds', '600')
+        $env:ASSISTENTE_WEBHOOK_PORTA = $null; $env:ASSISTENTE_WEBHOOK_SEGREDO = $null
+        try {
+            $up = Wait-Until { (Test-Path -LiteralPath $hookOut) -and ((Get-Content -Raw -LiteralPath $hookOut) -match 'WEBHOOK escutando') } 20
+            Check 'webhook: o detector escuta na porta configurada' $up ((Get-Content -Raw -LiteralPath $hookOut -ErrorAction SilentlyContinue))
+            $null = Wait-Until { @(Get-Requests | Where-Object { $_.tool -eq 'list_chats' }).Count -gt 0 } 10
+            Start-Sleep -Milliseconds 500
+            function Post-Hook([string]$Secret) {
+                $body = '{"event":"message","delivery_id":"d-1","message":{"id":"X","chat_jid":"' + $memberJid + '","from_me":false,"text":"oi"}}'
+                $bytes = $utf8.GetBytes($body)
+                $h = New-Object Security.Cryptography.HMACSHA256 (, $utf8.GetBytes($Secret))
+                $sig = 'sha256=' + (($h.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') }) -join '')
+                try { $r = Invoke-WebRequest -Uri "http://127.0.0.1:$hookPort/" -Method Post -Body $bytes -ContentType 'application/json' -Headers @{ 'X-WhatsApp-MCP-Event' = 'message'; 'X-WhatsApp-MCP-Signature' = $sig } -UseBasicParsing -TimeoutSec 5; [int]$r.StatusCode }
+                catch { if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { -1 } }
+            }
+            $n0 = @(Get-Requests | Where-Object { $_.tool -eq 'list_chats' }).Count
+            $bad = Post-Hook 'chave-errada'
+            Start-Sleep -Seconds 2
+            $n1 = @(Get-Requests | Where-Object { $_.tool -eq 'list_chats' }).Count
+            Check 'webhook: assinatura errada é recusada (401) e não dispara leitura' (($bad -eq 401) -and ($n1 -eq $n0)) "status=$bad leituras=$n0->$n1"
+            $good = Post-Hook 'segredo-de-teste'
+            $fast = Wait-Until { @(Get-Requests | Where-Object { $_.tool -eq 'list_chats' }).Count -gt $n1 } 5
+            Check 'webhook: aviso assinado (204) faz o detector ler na hora, sem esperar o intervalo' (($good -eq 204) -and $fast) "status=$good"
+        }
+        finally { if ($hookProc) { Stop-Process -Id $hookProc.Id -Force -ErrorAction SilentlyContinue } }
 
         Set-Responses @{ whatsapp_status = $status; get_chat_messages = @{ text = '{"messages":[]}' }; send_text_message = @{ text = '{"sent":true,"message_id":"FAKE-1"}' } }
         $s = Run @('send', '-Chat', $memberJid, '-Text', 'Oi, Dev!', '-Operator', 'claude', '-Token', $tk)
