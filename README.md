@@ -80,6 +80,7 @@ Para usar em script, há o `help -Json`.
 | Pôr alguém novo no time | "adiciona a Fulana na equipe do meu assistente" |
 | Desligar por um tempo | "desliga meu assistente" (`pause on`); para religar, "religa" |
 | Só triagem, sem responder sozinho | "deixa meu assistente só em triagem" |
+| Ver horários em outro fuso | "usa o fuso GMT+1 nos meus horários". O padrão é GMT-3, o fuso do time; para o time, os horários seguem em GMT-3 e, se os fusos forem diferentes, saem com o fuso escrito ao lado |
 
 ## Aviso de sessão
 

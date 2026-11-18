@@ -39,7 +39,10 @@ https://github.com/<org>/<repo>/pull/1234
   certeza, leve ao dono.
 - Não sabe ou não conseguiu conferir: diga isso em uma frase e o que vai fazer. **Nunca invente estado, prazo ou
   decisão.**
-- Horário sempre em Brasília (GMT-3), sem sufixo `Z`. As ferramentas devolvem UTC: subtraia 3 h.
+- **Horário no fuso certo, nunca em UTC nem com sufixo `Z`.** O time trabalha em GMT-3 (Brasília): para o time,
+  horário sempre em GMT-3. Para o dono, no fuso que ele escolheu (`ASSISTENTE_FUSO`; sem escolha, GMT-3). Se os dois
+  forem diferentes, escreva o fuso ao lado do horário ("16h (GMT-3)"). Não faça a conta de cabeça: as ferramentas
+  devolvem UTC, e `assistente.ps1 now -Due <instante>` converte para os dois fusos (sem `-Due`, dá a hora de agora).
 
 ## 3. Cortesia sempre, imposição nunca
 

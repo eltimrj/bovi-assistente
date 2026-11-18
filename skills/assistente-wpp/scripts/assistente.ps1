@@ -3,8 +3,9 @@ assistente-wpp: utilitários determinísticos do assistente de WhatsApp de cada 
 Nenhum deles chama modelo de IA. Só `send` envia mensagem, e só com o volante (lease) válido.
 
   assistente.ps1 help [-Json]                                manual: o que o assistente faz, o que está ativo/inativo e como mudar
-  assistente.ps1 setup [-Name "<nome do assistente>"] [-Owner "<seu nome>"] [-Jid <linked_jid>|auto] [-Mode responder|triagem]
+  assistente.ps1 setup [-Name "<nome do assistente>"] [-Owner "<seu nome>"] [-Jid <linked_jid>|auto] [-Mode responder|triagem] [-Fuso GMT-3]
                                                              grava/atualiza a configuração privada; -Jid auto lê do app
+  assistente.ps1 now [-Due <RFC 3339>]                      hora agora (ou a de -Due) no fuso do dono e no do time
   assistente.ps1 check                                       a configuração está pronta? (rc 0 = sim; lista o que falta)
   assistente.ps1 persona list | use -Name <preset> [-Force] | show
                                                              personalidades prontas; `use` copia o preset para a sua persona
@@ -34,14 +35,14 @@ mesmo nome têm precedência. Código de saída 2 = recusado; 1 = erro.
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('help', 'setup', 'check', 'persona', 'prefix', 'lease', 'sent', 'is-ours', 'watch', 'account', 'messages', 'send', 'config', 'resolve', 'name-key', 'name-match', 'heartbeat', 'followup', 'pause', 'intro-needed', 'team', 'allow', 'hold')]
+    [ValidateSet('help', 'setup', 'check', 'persona', 'prefix', 'lease', 'sent', 'is-ours', 'watch', 'account', 'messages', 'send', 'config', 'resolve', 'name-key', 'name-match', 'heartbeat', 'followup', 'pause', 'intro-needed', 'team', 'allow', 'hold', 'now')]
     [string]$Command,
     [Parameter(Position = 1)][string]$Action,
     [string]$Text,
     [ValidateSet('', 'claude', 'codex')][string]$Operator = '',
     [long]$Token = 0, [int]$TtlSeconds = 180,
     [string]$Id, [string]$Chat, [string]$MessageId, [string]$Since, [int]$Limit = 30,
-    [string]$Name, [string]$Owner, [string]$Jid, [ValidateSet('', 'responder', 'triagem')][string]$Mode = '',
+    [string]$Name, [string]$Owner, [string]$Jid, [ValidateSet('', 'responder', 'triagem')][string]$Mode = '', [string]$Fuso,
     [string]$Due, [string]$Note, [int]$MaxAgeSeconds = 120,
     [int]$IntervalSeconds = 30, [switch]$Once, [switch]$DryRun, [switch]$NewContactConfirmed, [switch]$OwnerRequested, [switch]$Force, [switch]$Json
 )
@@ -91,6 +92,32 @@ $Autonomy = Get-Cfg 'ASSISTENTE_AUTONOMIA' 'responder'
 $TeamPath = Get-Cfg 'ASSISTENTE_EQUIPE' (Join-Path $HomeDir 'equipe.json')
 $PersonaPath = Get-Cfg 'ASSISTENTE_PERSONA' (Join-Path $HomeDir 'persona.md')
 $HoldMinutes = [int](Get-Cfg 'ASSISTENTE_ESPERA_MIN' '15')
+$TeamFusoName = Get-Cfg 'ASSISTENTE_FUSO_TIME' 'GMT-3'   # o fuso em que o time trabalha
+$OwnerFusoName = Get-Cfg 'ASSISTENTE_FUSO' $TeamFusoName  # o fuso em que o dono quer ver os horários
+
+# Fuso: "GMT-3", "UTC+1", "GMT+5:30" (fixo) ou um id do Windows ("E. South America Standard Time", "GMT Standard Time").
+function Resolve-Fuso([string]$Value) {
+    $v = ([string]$Value).Trim()
+    if ($v -match '^(?:GMT|UTC)\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?$') {
+        $h = [int]$Matches[2]; $m = if ($Matches[3]) { [int]$Matches[3] } else { 0 }
+        if ($h -gt 14 -or $m -ge 60) { throw "fuso inválido: $Value" }
+        $off = New-Object TimeSpan ($h, $m, 0); if ($Matches[1] -eq '-') { $off = $off.Negate() }
+        $label = 'GMT' + $Matches[1] + $h + $(if ($m) { ':' + $m.ToString('00') } else { '' })
+        return [TimeZoneInfo]::CreateCustomTimeZone($label, $off, $label, $label)
+    }
+    if ($v -match '^(?:GMT|UTC)$') { return [TimeZoneInfo]::Utc }
+    try { return [TimeZoneInfo]::FindSystemTimeZoneById($v) } catch { throw "fuso inválido: $Value (use GMT-3, UTC+1 ou um id do Windows)" }
+}
+function Get-FusoLabel($Tz, [DateTimeOffset]$At) {
+    if ($Tz.Id -match '^GMT[+-]\d') { return $Tz.Id }
+    $o = $Tz.GetUtcOffset($At)
+    'GMT' + $(if ($o -lt [TimeSpan]::Zero) { '-' } else { '+' }) + [Math]::Abs($o.Hours) + $(if ($o.Minutes) { ':' + [Math]::Abs($o.Minutes).ToString('00') } else { '' })
+}
+function Format-InFuso([DateTimeOffset]$At, $Tz) {
+    $l = [TimeZoneInfo]::ConvertTime($At, $Tz)
+    $pt = [Globalization.CultureInfo]::GetCultureInfo('pt-BR')
+    [ordered]@{ fuso = (Get-FusoLabel $Tz $At); data_hora = $l.ToString('dd/MM/yyyy HH:mm'); dia = $pt.DateTimeFormat.GetDayName($l.DayOfWeek); iso = $l.ToString('yyyy-MM-ddTHH:mm:sszzz') }
+}
 
 function Out-Json($Obj) { $Obj | ConvertTo-Json -Depth 6 -Compress:$false }
 function Now-Utc { [DateTimeOffset]::UtcNow }
@@ -638,6 +665,9 @@ function Get-CheckProblems {
     if (-not $OwnerName) { $p += 'ASSISTENTE_DONO vazio' }
     if (-not $AccountJid) { $p += 'ASSISTENTE_CONTA_JID vazio (rode setup -Jid auto com o app aberto)' }
     if (@('responder', 'triagem') -notcontains $Autonomy) { $p += "ASSISTENTE_AUTONOMIA inválida: $Autonomy" }
+    foreach ($fz in @(@('ASSISTENTE_FUSO', $OwnerFusoName), @('ASSISTENTE_FUSO_TIME', $TeamFusoName))) {
+        try { $null = Resolve-Fuso $fz[1] } catch { $p += "$($fz[0]) inválido: $($fz[1]) (ex.: GMT-3)" }
+    }
     if (-not (Test-Path -LiteralPath $PersonaPath)) { $p += "sem persona ($PersonaPath): rode persona use -Name <preset>" }
     if (-not (Test-Path -LiteralPath $TeamPath)) { $p += "sem equipe ($TeamPath)" }
     else { $t = Read-Team; if (@($t.members).Count -eq 0) { $p += 'equipe sem membros' } }
@@ -663,6 +693,13 @@ function Get-HelpReport {
         Add-Item 'Identidade' 'Personalidade' 'ativo' "$presetName; $nAdj ajuste(s) seu(s)" '"deixa meu assistente mais X" (ajuste) ou "muda para a personalidade técnica" (troca)'
     }
     else { Add-Item 'Identidade' 'Personalidade' 'inativo' 'nenhuma escolhida' '"configura meu assistente de WhatsApp"' }
+    try {
+        $now = Now-Utc
+        $fo = Get-FusoLabel (Resolve-Fuso $OwnerFusoName) $now; $ft = Get-FusoLabel (Resolve-Fuso $TeamFusoName) $now
+        $fDet = if ($fo -eq $ft) { "$fo, o mesmo do time" } else { "seus avisos em $fo; para o time, $ft (o fuso de trabalho), sempre com o fuso escrito ao lado" }
+        Add-Item 'Identidade' 'Fuso dos horários' 'ativo' $fDet '"usa o fuso GMT+1 nos meus horários" (ASSISTENTE_FUSO)'
+    }
+    catch { Add-Item 'Identidade' 'Fuso dos horários' 'atenção' $_.Exception.Message 'corrigir ASSISTENTE_FUSO no .env (ex.: GMT-3)' }
 
     $app = 'inativo'; $appDet = 'app WhatsApp MCP não respondeu'
     try {
@@ -742,6 +779,10 @@ try {
             }
             if ($Owner) { $pairs['ASSISTENTE_DONO'] = $Owner.Trim() }
             if ($Mode) { $pairs['ASSISTENTE_AUTONOMIA'] = $Mode }
+            if ($Fuso) {
+                try { $null = Resolve-Fuso $Fuso } catch { Out-Json ([ordered]@{ saved = $false; reason = 'fuso_invalido'; dica = 'use GMT-3, UTC+1, GMT+5:30 ou um id do Windows' }); exit 2 }
+                $pairs['ASSISTENTE_FUSO'] = $Fuso.Trim()
+            }
             if ($Jid) {
                 if ($Jid -eq 'auto') {
                     $linked = (Invoke-Mcp 'whatsapp_status' @{}).wacli.linked_jid
@@ -750,7 +791,7 @@ try {
                 }
                 else { $pairs['ASSISTENTE_CONTA_JID'] = (Get-BaseJid $Jid) }
             }
-            if ($pairs.Count -eq 0) { throw 'informe ao menos um de -Name, -Owner, -Jid, -Mode' }
+            if ($pairs.Count -eq 0) { throw 'informe ao menos um de -Name, -Owner, -Jid, -Mode, -Fuso' }
             Set-EnvKeys $pairs
             $shown = [ordered]@{}; foreach ($k in $pairs.Keys) { $shown[$k] = $(if ($k -like '*JID') { Mask $pairs[$k] } else { $pairs[$k] }) }
             Out-Json ([ordered]@{ saved = $true; file = $ConfigPath; values = $shown }); exit 0
@@ -915,12 +956,20 @@ try {
             if ($need) { $why = 'nunca_falou' }
             Out-Json ([ordered]@{ chat = $Chat; intro_needed = $need; reason = $why }); exit 0
         }
+        'now' {
+            # Hora certa para escrever: no fuso do dono e no do time. Com -Due, converte esse instante (ex.: o UTC das ferramentas).
+            $at = if ($Due) { [DateTimeOffset]::Parse($Due, [Globalization.CultureInfo]::InvariantCulture) } else { Now-Utc }
+            $o = Format-InFuso $at (Resolve-Fuso $OwnerFusoName)
+            $t = Format-InFuso $at (Resolve-Fuso $TeamFusoName)
+            Out-Json ([ordered]@{ instante_utc = (Iso $at.ToUniversalTime()); dono = $o; time = $t; mesmo_fuso = ($o.fuso -eq $t.fuso); regra = 'ao dono, no fuso dele; ao time, no fuso do time; se forem diferentes, escreva o fuso ao lado do horário' })
+            exit 0
+        }
         'name-key' { Write-Output (Get-NameKey $Text); exit 0 }
         'name-match' { $m = Get-WordMatch $Text $Name; if ($m) { Write-Output $m; exit 0 } else { Write-Output 'nenhum'; exit 1 } }
         'resolve' { $r = Resolve-Recipient $Name; Out-Json $r; if ($r.status -eq 'unique') { exit 0 } else { exit 2 } }
         'config' {
             $o = [ordered]@{ config_file = $ConfigPath; config_file_exists = (Test-Path -LiteralPath $ConfigPath) }
-            foreach ($k in 'ASSISTENTE_NOME', 'ASSISTENTE_DONO', 'ASSISTENTE_CONTA_JID', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_MCP_URL', 'ASSISTENTE_AUTONOMIA', 'ASSISTENTE_ESPERA_MIN', 'ASSISTENTE_EQUIPE', 'ASSISTENTE_PERSONA', 'ASSISTENTE_PASTA_TRABALHO', 'ASSISTENTE_DESPACHANTE', 'ASSISTENTE_CLAUDE_PERMISSAO') {
+            foreach ($k in 'ASSISTENTE_NOME', 'ASSISTENTE_DONO', 'ASSISTENTE_CONTA_JID', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_MCP_URL', 'ASSISTENTE_AUTONOMIA', 'ASSISTENTE_FUSO', 'ASSISTENTE_FUSO_TIME', 'ASSISTENTE_ESPERA_MIN', 'ASSISTENTE_EQUIPE', 'ASSISTENTE_PERSONA', 'ASSISTENTE_PASTA_TRABALHO', 'ASSISTENTE_DESPACHANTE', 'ASSISTENTE_CLAUDE_PERMISSAO') {
                 $v = Get-Cfg $k
                 if ($k -like '*JID' -and $v) { $v = Mask $v }
                 $o[$k] = $v

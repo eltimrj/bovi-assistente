@@ -70,6 +70,9 @@ cortesia. Nada aqui envia mensagem a ninguém do time.
    `& $S setup -Mode <modo> -Jid auto`. O `-Jid auto` lê a conta conectada no app.
    Pergunte a pasta onde ficam os repositórios dele e grave em `ASSISTENTE_PASTA_TRABALHO` no
    `~/.assistente-wpp/assistente.env`, para o assistente conferir PRs com contexto.
+   **Fuso:** avise que o time trabalha em GMT-3 (Brasília) e que os horários saem assim. Pergunte só se ele quer
+   receber os avisos dele em outro fuso; se quiser, `& $S setup -Fuso <GMT+1 | id do Windows>`. Para o time, o
+   assistente segue em GMT-3 e, quando os fusos forem diferentes, escreve o fuso ao lado do horário.
 6. **Ligar.** `& $S check` tem que dar `ready: true`. Então `& $D -Mode start` e, uns 40 s depois,
    `& $S heartbeat` (rc 0 = de pé).
 7. **Onde ele programa.** Pergunte se usa o VS Code, o terminal (CLI) ou o T3 Code, para o aviso de sessão (§7b)
@@ -85,6 +88,7 @@ cortesia. Nada aqui envia mensagem a ninguém do time.
 | Toda mensagem começa com `*<Nome>:*`, uma vez por bolha (o `send` põe) | `send` |
 | Situação → objetivo → pedido, em texto natural, curto, com link; conferido na fonte antes | OBJETIVIDADE §1–2 |
 | Cortesia sempre, imposição nunca, com qualquer pessoa | OBJETIVIDADE §3 |
+| Horário em GMT-3 para o time e no fuso do dono para ele, nunca UTC; conversão pelo `now` | OBJETIVIDADE §2 |
 | Zero humor em conflito, cobrança, bloqueio, produção, cliente, RH, acesso ou dinheiro, em qualquer personalidade | OBJETIVIDADE §6 |
 | Só o time; fora dele, só com pedido explícito do dono (`allow`) | PROTOCOLO §1–2; trava no `send` |
 | Grupos: lê e leva ao dono; responde só com autorização prévia | PROTOCOLO §5; trava no `send` |
@@ -100,7 +104,7 @@ cortesia. Nada aqui envia mensagem a ninguém do time.
 - Antes de escrever, leia `persona.md`. Em conflito com OBJETIVIDADE ou com as regras acima, **vale a regra**.
 - **A personalidade só muda quando o dono pede.** Nunca por iniciativa própria, nem como sugestão insistente.
 - Pedido de ajuste ("deixa meu assistente mais direto", "pode usar emoji", "me chama de chefe"): edite
-  `persona.md` na seção **"Ajustes do dono"**, uma linha por ajuste, com a data (Brasília). Mostre ao dono, em uma
+  `persona.md` na seção **"Ajustes do dono"**, uma linha por ajuste, com a data (no fuso do dono, `& $S now`). Mostre ao dono, em uma
   frase, o que mudou.
 - Ajuste que conflita com o núcleo ("pode ser grosso com quem atrasar", "manda print da conversa"): explique em
   uma frase que essa parte não dá, por ser regra do time, e aplique o resto.

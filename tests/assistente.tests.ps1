@@ -146,6 +146,25 @@ try {
     Check 'allow: liberação vencida não vale' ((Run @('team', '-Chat', '5500912348888@s.whatsapp.net')).Rc -eq 2)
     $ho = (Run @('help')).Out
     Check 'help: com o app fechado, mostra a conexão inativa e não quebra' (($ho -match 'Manual de Jarvis') -and ($ho -match '\[inativo\] App WhatsApp MCP')) $ho
+    Check 'help: fuso padrão GMT-3, o mesmo do time' ($ho -match '\[ativo\]\s+Fuso dos horários: GMT-3, o mesmo do time') $ho
+
+    # --- fuso: GMT-3 por padrão; o dono pode escolher outro ---
+    $nw = J (Run @('now', '-Due', '2026-11-18T16:42:00Z'))
+    Check 'fuso: padrão GMT-3 converte o UTC das ferramentas' (($nw.dono.fuso -eq 'GMT-3') -and ($nw.dono.data_hora -eq '18/11/2026 13:42') -and ($nw.dono.dia -eq 'quarta-feira') -and $nw.mesmo_fuso) ($nw | ConvertTo-Json -Compress -Depth 4)
+    $env:ASSISTENTE_FUSO = 'GMT+1'
+    $nw = J (Run @('now', '-Due', '2026-11-18T23:30:00Z'))
+    Check 'fuso: dono em GMT+1, time segue em GMT-3 (e a data vira no dono)' (($nw.dono.data_hora -eq '19/11/2026 00:30') -and ($nw.time.data_hora -eq '18/11/2026 20:30') -and ($nw.time.fuso -eq 'GMT-3') -and -not $nw.mesmo_fuso) ($nw | ConvertTo-Json -Compress -Depth 4)
+    Check 'fuso: help mostra os dois fusos' ((Run @('help')).Out -match 'Fuso dos horários: seus avisos em GMT\+1; para o time, GMT-3')
+    $env:ASSISTENTE_FUSO = 'Tokyo Standard Time'
+    Check 'fuso: aceita id do Windows' (((J (Run @('now'))).dono.fuso) -eq 'GMT+9')
+    $env:ASSISTENTE_FUSO = 'Marte'
+    Check 'fuso: inválido aparece no check' (((J (Run @('check'))).problems -join ' ') -match 'ASSISTENTE_FUSO inválido')
+    $env:ASSISTENTE_FUSO = $null
+    $fz = Run @('setup', '-Fuso', 'GMT+99')
+    Check 'fuso: setup recusa fuso inválido' (($fz.Rc -eq 2) -and ((Reason $fz) -eq 'fuso_invalido')) $fz.Out
+    $fz = Run @('setup', '-Fuso', 'UTC-5')
+    Check 'fuso: setup grava o fuso escolhido' (($fz.Rc -eq 0) -and (((J (Run @('now'))).dono.fuso) -eq 'GMT-5')) $fz.Out
+    $null = Run @('setup', '-Fuso', 'GMT-3')
     $null = Run @('pause', 'on')
     Check 'pausa: send recusado' ((Reason (Send $memberJid)) -eq 'pausado')
     $null = Run @('pause', 'off')

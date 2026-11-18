@@ -254,6 +254,11 @@ function Build-Prompt($Lines, $DueFollowups, [string]$ReconcileFrom) {
     [void]$sb.AppendLine("- O volante já é seu: -Operator claude -Token $($script:Token). Se um ``send`` recusar por lease, pare e diga isso no resumo.")
     [void]$sb.AppendLine('- Retorno prometido: só `followup add`. O despachante te acorda no vencimento.')
     [void]$sb.AppendLine('- Termine com um resumo curto: uma linha por item, dizendo o que fez ou por que não fez. Sem conversa na íntegra.')
+    $hora = Invoke-Assistente 'now'
+    if ($hora -and $hora.dono) {
+        $fz = if ($hora.mesmo_fuso) { "$($hora.time.fuso), o mesmo para o dono e o time" } else { "ao time em $($hora.time.fuso) e ao dono em $($hora.dono.fuso), com o fuso escrito ao lado" }
+        [void]$sb.AppendLine("- Agora: $($hora.time.dia), $($hora.time.data_hora) ($($hora.time.fuso)). Horários: $fz. Instante das ferramentas (UTC) converte com ``now -Due``.")
+    }
     [void]$sb.AppendLine('')
     [void]$sb.AppendLine("Autorização do dono ($OwnerName), dada ao instalar e configurar o assistente (ASSISTENTE_AUTONOMIA=$Autonomy):")
     if ($Autonomy -eq 'responder') { [void]$sb.AppendLine('- O assistente responde sozinho, pelo `assistente.ps1 send`, a quem é do time, dentro das regras da skill.') }
