@@ -7,7 +7,7 @@ try { $data = $raw | ConvertFrom-Json -ErrorAction Stop } catch { exit 0 }
 if (-not $data.session_id) { exit 0 }
 if ($env:ASSISTENTE_DESPACHADO) { exit 0 }
 
-$HomeDir = if ($env:ASSISTENTE_HOME) { $env:ASSISTENTE_HOME } else { Join-Path $env:USERPROFILE '.assistente-wpp' }
+$HomeDir = if ($env:ASSISTENTE_HOME) { $env:ASSISTENTE_HOME } else { Join-Path $HOME '.assistente-wpp' }
 $stateRoot = if ($env:ASSISTENTE_STATE_DIR) { $env:ASSISTENTE_STATE_DIR } else { Join-Path $HomeDir 'state' }
 $dir = Join-Path $stateRoot 'avisos'
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -28,6 +28,6 @@ if (Test-Path -LiteralPath $fail) {
     $why = [IO.File]::ReadAllText($fail).Trim()
     Remove-Item -LiteralPath $fail -Force -ErrorAction SilentlyContinue
     [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false
-    @{ systemMessage = "O aviso de sessão no WhatsApp falhou ($why). Detalhes em $dir\aviso-sessao.log" } | ConvertTo-Json -Compress
+    @{ systemMessage = "O aviso de sessão no WhatsApp falhou ($why). Detalhes em $(Join-Path $dir 'aviso-sessao.log')" } | ConvertTo-Json -Compress
 }
 exit 0
