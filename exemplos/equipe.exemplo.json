@@ -1,0 +1,28 @@
+{
+  "_leia": "Copie para ~/.assistente-wpp/equipe.json e preencha com o time. Este arquivo real é privado: telefones nunca vão para repositório. Os números abaixo são fictícios.",
+  "members": [
+    {
+      "name": "Fulana de Tal",
+      "jids": ["5500900000001@s.whatsapp.net"],
+      "lids": [],
+      "role": "QA",
+      "focus": "validação em tela",
+      "github": "fulana-gh",
+      "rules": "contatos/fulana.md",
+      "knows_assistant": false
+    },
+    {
+      "name": "Beltrano Silva",
+      "jids": ["5500900000002@s.whatsapp.net"],
+      "lids": [],
+      "role": "dev",
+      "focus": "backend",
+      "github": "beltrano-gh",
+      "rules": "contatos/beltrano.md"
+    }
+  ],
+  "groups": [
+    { "name": "Devs do time", "jid": "120363000000000000@g.us", "respond": false }
+  ],
+  "extra": []
+}

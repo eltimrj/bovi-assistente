@@ -1,0 +1,12 @@
+# Configuração e dados privados nunca entram aqui (ficam em ~/.assistente-wpp/).
+.env
+.env.local
+*.env
+!.env.example
+equipe.json
+persona.md
+contatos/
+state/
+*.log
+.install-manifest.json
+*.installing/

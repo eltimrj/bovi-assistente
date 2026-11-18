@@ -1,0 +1,118 @@
+# bovi-assistente
+
+Um assistente de WhatsApp para cada dev do time, rodando no Claude Code.
+
+Ele atende os colegas pelo **seu** WhatsApp: responde quem pergunta do estado de um PR, card ou story (sempre
+conferido na fonte e com link), lê os grupos do time e te traz o que importa. Também te avisa quando uma sessão sua
+do Claude Code termina e está esperando por você.
+
+**Você batiza o seu assistente e escolhe a personalidade dele.** Há quatro prontas (objetiva, cordial, técnica e
+leve), e você pode ajustar quando quiser, só pedindo. Ou pode não mexer nunca: ele funciona bem do jeito que vem.
+O que não muda em nenhuma personalidade é a **objetividade**: mensagem curta, clara, cortês e com o próximo passo.
+
+## Como funciona
+
+```
+WhatsApp ── app WhatsApp MCP ── detector (sem IA, a cada 30 s)
+                                     │ mensagem nova do time
+                                     ▼
+                              despachante ── abre o Claude sem tela ── lê, confere, responde ── fecha
+                                     ▲
+                              vigia (Agendador do Windows, a cada 3 min): mantém tudo de pé e te avisa se cair
+```
+
+- Em repouso, o consumo é quase zero: o Claude só abre quando chega mensagem do time.
+- Ele só fala com quem você colocou na sua lista do time. Ninguém de fora é lido nem respondido.
+- Quando você mesmo escreve numa conversa, ele fica em silêncio ali por 15 min.
+- Ele só conversa: merge, card, acesso ou recado a terceiros, só com o seu ok.
+- Telefones, a lista do time e a sua personalidade ficam só no seu computador (`~/.assistente-wpp/`), nunca
+  em repositório.
+
+## Requisitos
+
+- **Windows** (Mac na próxima versão).
+- [**Claude Code**](https://claude.com/claude-code) instalado e logado (VS Code, terminal ou T3 Code).
+- App [**WhatsApp MCP**](https://github.com/BrOrlandi/whatsapp-mcp-local), aberto e com o seu WhatsApp
+  conectado.
+- `gh` (GitHub CLI) logado, para o assistente conferir PRs.
+
+## Instalar
+
+```powershell
+git clone https://github.com/eltimrj/bovi-assistente.git
+cd bovi-assistente
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Depois, abra o Claude Code e diga:
+
+> configura meu assistente de WhatsApp
+
+Ele te guia: o nome do assistente, a personalidade, quem é do time, quanta autonomia ele tem e onde você programa.
+Leva uns 10 minutos.
+
+## No dia a dia
+
+| Você quer | Diga ao Claude, ou faça |
+|---|---|
+| Ajustar a personalidade | "deixa meu assistente mais direto", "pode usar emoji" |
+| Trocar de personalidade | "muda meu assistente para a personalidade técnica" |
+| Trocar o nome | "troca o nome do meu assistente para X" |
+| Mandar um recado | "manda pro Fulano que o PR está pronto", ou escreva isso na conversa consigo mesmo no WhatsApp |
+| Pôr alguém novo no time | "adiciona a Fulana na equipe do meu assistente" |
+| Desligar por um tempo | "desliga meu assistente" (`pause on`); para religar, "religa" |
+| Só triagem, sem responder sozinho | "deixa meu assistente só em triagem" |
+
+## Aviso de sessão
+
+Quando uma sessão sua do Claude Code passa de 1 minuto e termina, ou fica esperando a sua autorização ou resposta,
+o assistente te avisa no WhatsApp com o título da sessão e um jeito de voltar a ela:
+
+- **VS Code:** um link que abre a sessão.
+- **Terminal (CLI):** a pasta e o comando `claude --resume <id>`.
+- **T3 Code:** o título da conversa e a pasta. Ainda não testado com o T3 (veja o `SKILL.md`, §7b).
+- **Remote Control ligado:** também o link para abrir no celular.
+
+Desligar: `ASSISTENTE_AVISO_SESSAO=0` em `~/.assistente-wpp/assistente.env`.
+
+## Atualizar
+
+```powershell
+git pull
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+A sua configuração, a equipe e a personalidade não são tocadas.
+
+## Desinstalar
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Remover
+```
+
+Remove a skill, a tarefa do vigia e os hooks. A pasta `~/.assistente-wpp` fica; apague à mão se quiser.
+
+## Testes
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\assistente.tests.ps1
+```
+
+Rodam contra um app WhatsApp falso, num diretório temporário, sem tocar na sua configuração.
+
+## Estrutura
+
+```
+install.ps1                         instalador (skill, vigia, hooks)
+skills/assistente-wpp/
+  SKILL.md                          o que o Claude lê: onboarding, regras, personalidade, operação
+  references/OBJETIVIDADE.md        o núcleo de toda mensagem (nenhuma personalidade muda)
+  references/PROTOCOLO.md           quem atender, grupos, espera, sigilo
+  references/personalidades/        os quatro presets
+  scripts/assistente.ps1            utilitários sem IA: envio com travas, detector, equipe, volante
+  scripts/assistente-despachante.ps1  abre o Claude a cada lote de mensagens
+  scripts/assistente-vigia.ps1      mantém o despachante de pé e avisa se cair
+  scripts/aviso-sessao*.ps1         aviso de sessão terminada (hooks do Claude Code)
+exemplos/equipe.exemplo.json        formato da lista do time (números fictícios)
+tests/                              testes com app WhatsApp falso
+```
