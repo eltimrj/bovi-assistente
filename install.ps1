@@ -1,10 +1,15 @@
-﻿# Instala (ou atualiza) a skill assistente-wpp para o Claude Code, no Windows.
+﻿# Instala (ou atualiza) a skill assistente-wpp para o Claude Code, no Windows ou no macOS.
+#   Windows: powershell -ExecutionPolicy Bypass -File .\install.ps1
+#   macOS:   pwsh ./install.ps1        (PowerShell 7: brew install powershell)
 #
 #   install.ps1            instala/atualiza a skill, cria ~/.assistente-wpp e registra o vigia
 #   install.ps1 -Check     só confere se a cópia instalada é igual à do repositório (rc 0 = igual)
-#   install.ps1 -SemVigia  instala sem registrar a tarefa agendada do vigia
+#   install.ps1 -SemVigia  instala sem registrar o vigia (tarefa agendada no Windows, LaunchAgent no Mac)
 #   install.ps1 -SemAvisoSessao  instala sem os hooks do aviso de sessão (e remove os que houver)
-#   install.ps1 -Remover   remove a tarefa do vigia, os hooks e a skill instalada (a pasta ~/.assistente-wpp fica)
+#   install.ps1 -Remover   remove o vigia, os hooks e a skill instalada (a pasta ~/.assistente-wpp fica)
+#
+# Mac: o vigia é o LaunchAgent local.assistente-wpp.vigia em ~/Library/LaunchAgents (no login e a cada 3 min).
+# -LaunchAgentsDir fora da pasta padrão só grava/apaga o arquivo, sem chamar o launchctl (usado nos testes).
 #
 # O repositório é a fonte; a pasta instalada é um espelho copiado, com o hash de cada arquivo em
 # .install-manifest.json. A configuração, a equipe, a persona e o estado ficam em ~/.assistente-wpp e
@@ -17,20 +22,78 @@ param(
     [switch]$Remover,
     [string]$SkillsRoot = (Join-Path $HOME '.claude\skills'),
     [string]$PrivateDir = (Join-Path $HOME '.assistente-wpp'),
-    [string]$ClaudeSettings = (Join-Path $HOME '.claude\settings.json')
+    [string]$ClaudeSettings = (Join-Path $HOME '.claude\settings.json'),
+    [string]$LaunchAgentsDir = (Join-Path $HOME 'Library/LaunchAgents')
 )
 $ErrorActionPreference = 'Stop'
 $Skill = 'assistente-wpp'
 $Src = Join-Path $PSScriptRoot "skills\$Skill"
+. (Join-Path $Src 'scripts\plataforma.ps1')
 $Target = Join-Path $SkillsRoot $Skill
 $TaskName = 'AssistenteWppVigia'
+$Plist = Join-Path $LaunchAgentsDir "$VigiaRotulo.plist"
+$UsaLaunchctl = ($LaunchAgentsDir -eq (Join-Path $HOME 'Library/LaunchAgents'))
+
+# Mac: tira o LaunchAgent do vigia do launchd (se carregado) e apaga o arquivo. Devolve $true se havia algo.
+function Remove-VigiaMac {
+    $havia = $false
+    if ($UsaLaunchctl) {
+        $uid = (& /usr/bin/id -u).Trim()
+        if (Test-VigiaMac) { & /bin/launchctl bootout "gui/$uid/$VigiaRotulo" 2>$null; $havia = $true }
+    }
+    if (Test-Path -LiteralPath $Plist) { Remove-Item -LiteralPath $Plist -Force; $havia = $true }
+    $havia
+}
+
+# Mac: LaunchAgent do vigia. RunAtLoad = no login; StartInterval 180 = a cada 3 min. AbandonProcessGroup deixa o
+# despachante (que o vigia sobe) vivo quando o vigia termina; sem ele, o launchd derruba o grupo de processos.
+# O PATH do terminal vai junto, porque o launchd começa com um PATH mínimo (sem o claude, o gh e o brew).
+function Install-VigiaMac([string]$Vigia) {
+    $esc = { param($s) [Security.SecurityElement]::Escape([string]$s) }
+    $dirs = @(([string]$env:PATH -split ':') + @('/opt/homebrew/bin', '/usr/local/bin', (Join-Path $HOME '.local/bin'), '/usr/bin', '/bin', '/usr/sbin', '/sbin') | Where-Object { $_ } | Select-Object -Unique)
+    $logDir = Join-Path (Join-Path $PrivateDir 'state') 'launchd'
+    New-Item -ItemType Directory -Force -Path $logDir, $LaunchAgentsDir | Out-Null
+    $xml = @"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$VigiaRotulo</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$(& $esc (Get-PsExe))</string>
+        <string>-NoProfile</string>
+        <string>-File</string>
+        <string>$(& $esc $Vigia)</string>
+    </array>
+    <key>RunAtLoad</key><true/>
+    <key>StartInterval</key><integer>180</integer>
+    <key>AbandonProcessGroup</key><true/>
+    <key>ProcessType</key><string>Background</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key><string>$(& $esc ($dirs -join ':'))</string>
+    </dict>
+    <key>StandardOutPath</key><string>$(& $esc (Join-Path $logDir 'vigia.out.log'))</string>
+    <key>StandardErrorPath</key><string>$(& $esc (Join-Path $logDir 'vigia.err.log'))</string>
+</dict>
+</plist>
+"@
+    $null = Remove-VigiaMac
+    [IO.File]::WriteAllText($Plist, $xml, (New-Object Text.UTF8Encoding $false))
+    if ($UsaLaunchctl) {
+        $uid = (& /usr/bin/id -u).Trim()
+        $o = (& /bin/launchctl bootstrap "gui/$uid" $Plist 2>&1 | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0) { throw "launchctl bootstrap falhou: $o" }
+    }
+}
 $Excluded = '(^|[\\/])(\.env|\.env\.local|\.install-manifest\.json)$'
 
 # Hooks do aviso de sessão no ~/.claude/settings.json do usuário. Remove só os nossos (identificados pelo caminho
 # do script) e, com $Add, registra de novo apontando para a cópia instalada. Os demais hooks ficam como estão.
 function Update-ClaudeHooks([bool]$Add) {
     $sp = $ClaudeSettings
-    $marker = 'assistente-wpp\scripts\aviso-sessao'
+    $marker = 'assistente-wpp[\\/]+scripts[\\/]+aviso-sessao'   # regex: \ no Windows, / no Mac
     $s = [pscustomobject]@{}
     if (Test-Path -LiteralPath $sp) {
         $rawJson = Get-Content -LiteralPath $sp -Raw -Encoding UTF8
@@ -40,7 +103,7 @@ function Update-ClaudeHooks([bool]$Add) {
         Copy-Item -LiteralPath $sp -Destination $bk
     }
     if (-not ($s.PSObject.Properties.Name -contains 'hooks')) { $s | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) }
-    $isOurs = { param($h) ((@($h.args) -join ' ') + ' ' + [string]$h.command) -like "*$marker*" }
+    $isOurs = { param($h) ((@($h.args) -join ' ') + ' ' + [string]$h.command) -match $marker }
     foreach ($ev in 'UserPromptSubmit', 'Stop', 'Notification', 'PreToolUse') {
         $kept = @()
         if ($s.hooks.PSObject.Properties.Name -contains $ev) {
@@ -53,7 +116,7 @@ function Update-ClaudeHooks([bool]$Add) {
             $scriptName = if ($ev -eq 'UserPromptSubmit') { 'aviso-sessao-inicio.ps1' } else { 'aviso-sessao.ps1' }
             $a = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Target "scripts\$scriptName"))
             if ($ev -eq 'Notification' -or $ev -eq 'PreToolUse') { $a += @('-Mode', 'wait') }
-            $h = [ordered]@{ type = 'command'; command = 'powershell.exe'; args = $a; timeout = $(if ($ev -eq 'UserPromptSubmit') { 10 } else { 90 }) }
+            $h = [ordered]@{ type = 'command'; command = (Get-PsExe); args = $a; timeout = $(if ($ev -eq 'UserPromptSubmit') { 10 } else { 90 }) }
             if ($ev -ne 'UserPromptSubmit') { $h['async'] = $true }
             $g = [ordered]@{ hooks = @([pscustomobject]$h) }
             if ($ev -eq 'Notification') { $g = [ordered]@{ matcher = 'permission_prompt|elicitation_dialog'; hooks = $g.hooks } }
@@ -94,10 +157,13 @@ function Compare-Install([string]$Dir, $Map) {
 }
 
 if ($Remover) {
-    try { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Stop; Write-Output "tarefa $TaskName removida" } catch { Write-Output "tarefa $TaskName não existia" }
+    if ($EhMac) {
+        try { if (Remove-VigiaMac) { Write-Output "vigia $VigiaRotulo removido" } else { Write-Output "vigia $VigiaRotulo não existia" } } catch { Write-Output "aviso  não consegui remover o vigia: $($_.Exception.Message)" }
+    }
+    else { try { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Stop; Write-Output "tarefa $TaskName removida" } catch { Write-Output "tarefa $TaskName não existia" } }
     try { Update-ClaudeHooks $false; Write-Output 'hooks do aviso de sessão removidos' } catch { Write-Output "aviso  não consegui remover os hooks: $($_.Exception.Message)" }
     $d = Join-Path $Target 'scripts\assistente-despachante.ps1'
-    if (Test-Path -LiteralPath $d) { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $d -Mode stop }
+    if (Test-Path -LiteralPath $d) { & (Get-PsExe) -NoProfile -ExecutionPolicy Bypass -File $d -Mode stop }
     if (Test-Path -LiteralPath $Target) { Remove-Item -Recurse -Force -LiteralPath $Target; Write-Output "skill removida: $Target" }
     Write-Output "configuração preservada em $PrivateDir (apague à mão se quiser)"
     exit 0
@@ -144,8 +210,16 @@ New-Item -ItemType Directory -Force -Path $PrivateDir, (Join-Path $PrivateDir 'c
 $envDst = Join-Path $PrivateDir 'assistente.env'
 if (-not (Test-Path -LiteralPath $envDst)) { Copy-Item -LiteralPath (Join-Path $Src '.env.example') -Destination $envDst; Write-Output "criado $envDst" }
 
-# Vigia: tarefa agendada do usuário, a cada 3 min, sem janela. Ele sobe o despachante quando a configuração estiver pronta.
-if (-not $SemVigia) {
+# Vigia: tarefa agendada do usuário (Windows) ou LaunchAgent (Mac), a cada 3 min, sem janela. Ele sobe o
+# despachante quando a configuração estiver pronta.
+if (-not $SemVigia -and $EhMac) {
+    try {
+        Install-VigiaMac (Join-Path $Target 'scripts\assistente-vigia.ps1')
+        Write-Output "vigia  LaunchAgent $VigiaRotulo registrado (a cada 3 min e no login)"
+    }
+    catch { Write-Output "aviso  não consegui registrar o LaunchAgent do vigia: $($_.Exception.Message)" }
+}
+elseif (-not $SemVigia) {
     $vigia = Join-Path $Target 'scripts\assistente-vigia.ps1'
     try {
         $action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\conhost.exe" -Argument "--headless powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$vigia`""
@@ -167,8 +241,9 @@ try {
 catch { Write-Output "aviso  não consegui atualizar ~/.claude/settings.json: $($_.Exception.Message)" }
 
 Write-Output ''
-Write-Output 'Importante: o assistente roda neste Windows e fica ativo sempre que você estiver logado nesta máquina'
-Write-Output '(o vigia o religa no logon e a cada 3 min, sem sessão do Claude aberta).'
+$aqui = if ($EhMac) { 'neste Mac' } else { 'neste Windows' }
+Write-Output "Importante: o assistente roda $aqui e fica ativo sempre que você estiver logado nesta máquina"
+Write-Output '(o vigia o religa no login e a cada 3 min, sem sessão do Claude aberta).'
 Write-Output 'Se não quiser que rode aqui, desative ("desliga meu assistente", ou install.ps1 -Remover) e instale no'
 Write-Output 'computador de trabalho. Ligue em um computador só por conta de WhatsApp, ou ele responde em dobro.'
 Write-Output ''
