@@ -79,7 +79,7 @@ try {
     Check 'check: sem conta, persona e equipe não está pronto (rc 2)' (($ck.Rc -eq 2) -and ((J $ck).problems.Count -ge 3)) $ck.Out
     $pl = J (Run @('persona', 'list'))
     $names = @($pl.presets | ForEach-Object { $_.preset })
-    Check 'persona: os quatro presets aparecem, com resumo' ((@('cordial', 'leve', 'objetiva', 'tecnica') | Where-Object { $names -contains $_ }).Count -eq 4 -and -not (@($pl.presets | Where-Object { -not $_.resumo }).Count)) ($names -join ',')
+    Check 'persona: os seis presets aparecem, com resumo' ((@('amorosa', 'cordial', 'leve', 'objetiva', 'parca', 'tecnica') | Where-Object { $names -contains $_ }).Count -eq 6 -and -not (@($pl.presets | Where-Object { -not $_.resumo }).Count)) ($names -join ',')
     Check 'persona: preset inexistente é recusado' ((Run @('persona', 'use', '-Name', 'inexistente')).Rc -eq 2)
     $pu = Run @('persona', 'use', '-Name', 'cordial')
     $pp = Join-Path $tmp 'persona.md'
@@ -147,6 +147,27 @@ try {
     $ho = (Run @('help')).Out
     Check 'help: com o app fechado, mostra a conexão inativa e não quebra' (($ho -match 'Manual de Jarvis') -and ($ho -match '\[inativo\] App WhatsApp MCP')) $ho
     Check 'help: fuso padrão GMT-3, o mesmo do time' ($ho -match '\[ativo\]\s+Fuso dos horários: GMT-3, o mesmo do time') $ho
+    Check 'help: gênero opcional, neutro sem escolha' ($ho -match '\[inativo\] Gênero do assistente \(opcional\): não definido: formas neutras') $ho
+    Check 'help: explica onde roda e como desativar' (($ho -match '\[ativo\]\s+Windows: onde roda: neste PC') -and ($ho -match 'computador de trabalho') -and ($ho -match 'em dobro')) $ho
+
+    # --- gênero e personalidades só com o dono ---
+    $gr = Run @('setup', '-Genero', 'feminino')
+    Check 'gênero: setup grava e o help mostra a concordância' (($gr.Rc -eq 0) -and ((Run @('help')).Out -match '\[ativo\]\s+Gênero do assistente \(opcional\): feminino \(concordância: obrigada\)')) $gr.Out
+    $null = Run @('setup', '-Genero', 'neutro')
+    $env:ASSISTENTE_GENERO = 'robô'
+    Check 'gênero: valor inválido aparece no check' (((J (Run @('check'))).problems -join ' ') -match 'ASSISTENTE_GENERO inválido')
+    $env:ASSISTENTE_GENERO = $null
+    $pl = (J (Run @('persona', 'list'))).presets
+    $am = @($pl | Where-Object { $_.preset -eq 'amorosa' })[0]; $pc = @($pl | Where-Object { $_.preset -eq 'parca' })[0]; $ob = @($pl | Where-Object { $_.preset -eq 'objetiva' })[0]
+    Check 'persona: seis presets' (@($pl).Count -eq 6) (($pl | ForEach-Object { $_.preset }) -join ',')
+    Check 'persona: amorosa só com o dono, cordial com o time' ($am.so_com_o_dono -and $am.com_o_time -eq 'cordial') ($am | ConvertTo-Json -Compress)
+    Check 'persona: parça só com o dono, leve com o time' ($pc.so_com_o_dono -and $pc.com_o_time -eq 'leve') ($pc | ConvertTo-Json -Compress)
+    Check 'persona: objetiva vale com todos' ((-not $ob.so_com_o_dono) -and $ob.com_o_time -eq 'objetiva') ($ob | ConvertTo-Json -Compress)
+    Check 'persona: todo "Com o time" aponta para um preset que existe' (@($pl | Where-Object { @($pl.preset) -notcontains $_.com_o_time }).Count -eq 0)
+    $env:ASSISTENTE_PERSONA = Join-Path $tmp 'persona-parca.md'
+    $null = Run @('persona', 'use', '-Name', 'parca')
+    Check 'help: persona parça avisa que o tom é só com o dono' ((Run @('help')).Out -match 'Personalidade: Parça; 0 ajuste\(s\) seu\(s\); esse tom é só com você, com o time fala no tom leve')
+    $env:ASSISTENTE_PERSONA = $null
 
     # --- fuso: GMT-3 por padrão; o dono pode escolher outro ---
     $nw = J (Run @('now', '-Due', '2026-11-18T16:42:00Z'))

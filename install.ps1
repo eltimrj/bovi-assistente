@@ -167,4 +167,9 @@ try {
 catch { Write-Output "aviso  não consegui atualizar ~/.claude/settings.json: $($_.Exception.Message)" }
 
 Write-Output ''
+Write-Output 'Importante: o assistente roda neste Windows e fica ativo sempre que você estiver logado nesta máquina'
+Write-Output '(o vigia o religa no logon e a cada 3 min, sem sessão do Claude aberta).'
+Write-Output 'Se não quiser que rode aqui, desative ("desliga meu assistente", ou install.ps1 -Remover) e instale no'
+Write-Output 'computador de trabalho. Ligue em um computador só por conta de WhatsApp, ou ele responde em dobro.'
+Write-Output ''
 Write-Output 'Pronto. Abra o Claude Code e diga: "configura meu assistente de WhatsApp".'

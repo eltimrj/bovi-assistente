@@ -3,7 +3,7 @@ assistente-wpp: utilitários determinísticos do assistente de WhatsApp de cada 
 Nenhum deles chama modelo de IA. Só `send` envia mensagem, e só com o volante (lease) válido.
 
   assistente.ps1 help [-Json]                                manual: o que o assistente faz, o que está ativo/inativo e como mudar
-  assistente.ps1 setup [-Name "<nome do assistente>"] [-Owner "<seu nome>"] [-Jid <linked_jid>|auto] [-Mode responder|triagem] [-Fuso GMT-3]
+  assistente.ps1 setup [-Name "<nome do assistente>"] [-Owner "<seu nome>"] [-Jid <linked_jid>|auto] [-Mode responder|triagem] [-Fuso GMT-3] [-Genero feminino|masculino|neutro]
                                                              grava/atualiza a configuração privada; -Jid auto lê do app
   assistente.ps1 now [-Due <RFC 3339>]                      hora agora (ou a de -Due) no fuso do dono e no do time
   assistente.ps1 check                                       a configuração está pronta? (rc 0 = sim; lista o que falta)
@@ -43,6 +43,7 @@ param(
     [long]$Token = 0, [int]$TtlSeconds = 180,
     [string]$Id, [string]$Chat, [string]$MessageId, [string]$Since, [int]$Limit = 30,
     [string]$Name, [string]$Owner, [string]$Jid, [ValidateSet('', 'responder', 'triagem')][string]$Mode = '', [string]$Fuso,
+    [ValidateSet('', 'feminino', 'masculino', 'neutro')][string]$Genero = '',
     [string]$Due, [string]$Note, [int]$MaxAgeSeconds = 120,
     [int]$IntervalSeconds = 30, [switch]$Once, [switch]$DryRun, [switch]$NewContactConfirmed, [switch]$OwnerRequested, [switch]$Force, [switch]$Json
 )
@@ -650,11 +651,19 @@ function Set-EnvKeys([hashtable]$Pairs) {
     [IO.File]::WriteAllText($ConfigPath, (($lines -join "`r`n") + "`r`n"), $Utf8)
 }
 
+# "Escopo: só com o dono. Com o time: cordial." -> 'cordial' (o tom vale só com o dono); sem a linha -> ''.
+function Get-PersonaScope([string[]]$Lines) {
+    foreach ($l in $Lines) { if ($l -match '^Escopo:\s*só com o dono\.\s*Com o time:\s*([\w-]+)') { return $Matches[1] } }
+    ''
+}
+
 function Get-Presets {
     if (-not (Test-Path -LiteralPath $PresetDir)) { return @() }
     @(Get-ChildItem -LiteralPath $PresetDir -Filter '*.md' | Sort-Object Name | ForEach-Object {
-            $first = (Get-Content -LiteralPath $_.FullName -Encoding UTF8 -TotalCount 12 | Where-Object { $_ -match '^>\s*' } | Select-Object -First 1) -replace '^>\s*', ''
-            [ordered]@{ preset = $_.BaseName; resumo = $first }
+            $headLines = @(Get-Content -LiteralPath $_.FullName -Encoding UTF8 -TotalCount 12)
+            $first = ($headLines | Where-Object { $_ -match '^>\s*' } | Select-Object -First 1) -replace '^>\s*', ''
+            $sc = Get-PersonaScope $headLines
+            [ordered]@{ preset = $_.BaseName; resumo = $first; so_com_o_dono = [bool]$sc; com_o_time = $(if ($sc) { $sc } else { $_.BaseName }) }
         })
 }
 
@@ -665,6 +674,8 @@ function Get-CheckProblems {
     if (-not $OwnerName) { $p += 'ASSISTENTE_DONO vazio' }
     if (-not $AccountJid) { $p += 'ASSISTENTE_CONTA_JID vazio (rode setup -Jid auto com o app aberto)' }
     if (@('responder', 'triagem') -notcontains $Autonomy) { $p += "ASSISTENTE_AUTONOMIA inválida: $Autonomy" }
+    $g = Get-Cfg 'ASSISTENTE_GENERO'
+    if ($g -and @('feminino', 'masculino', 'neutro') -notcontains $g) { $p += "ASSISTENTE_GENERO inválido: $g (feminino, masculino, neutro ou vazio)" }
     foreach ($fz in @(@('ASSISTENTE_FUSO', $OwnerFusoName), @('ASSISTENTE_FUSO_TIME', $TeamFusoName))) {
         try { $null = Resolve-Fuso $fz[1] } catch { $p += "$($fz[0]) inválido: $($fz[1]) (ex.: GMT-3)" }
     }
@@ -690,9 +701,13 @@ function Get-HelpReport {
         $presetName = ($head -replace '^#\s*Personalidade:\s*', '').Trim()
         $adj = @((Get-Content -LiteralPath $PersonaPath -Raw -Encoding UTF8) -split 'Ajustes do dono', 2)
         $nAdj = if ($adj.Count -gt 1) { @($adj[1] -split "`n" | Where-Object { $_ -match '^\s*-\s+\S' }).Count } else { 0 }
-        Add-Item 'Identidade' 'Personalidade' 'ativo' "$presetName; $nAdj ajuste(s) seu(s)" '"deixa meu assistente mais X" (ajuste) ou "muda para a personalidade técnica" (troca)'
+        $scope = Get-PersonaScope @(Get-Content -LiteralPath $PersonaPath -Encoding UTF8 -TotalCount 12)
+        $pDet = "$presetName; $nAdj ajuste(s) seu(s)" + $(if ($scope) { "; esse tom é só com você, com o time fala no tom $scope" } else { '' })
+        Add-Item 'Identidade' 'Personalidade' 'ativo' $pDet '"deixa meu assistente mais X" (ajuste) ou "muda para a personalidade técnica" (troca)'
     }
     else { Add-Item 'Identidade' 'Personalidade' 'inativo' 'nenhuma escolhida' '"configura meu assistente de WhatsApp"' }
+    $gen = Get-Cfg 'ASSISTENTE_GENERO'
+    Add-Item 'Identidade' 'Gênero do assistente (opcional)' $(if ($gen -and $gen -ne 'neutro') { 'ativo' } else { 'inativo' }) $(if ($gen -and $gen -ne 'neutro') { "$gen (concordância: $(if ($gen -eq 'feminino') { 'obrigada' } else { 'obrigado' }))" } else { 'não definido: formas neutras' }) '"meu assistente é ela/ele" ou "deixa neutro" (ASSISTENTE_GENERO)'
     try {
         $now = Now-Utc
         $fo = Get-FusoLabel (Resolve-Fuso $OwnerFusoName) $now; $ft = Get-FusoLabel (Resolve-Fuso $TeamFusoName) $now
@@ -739,6 +754,7 @@ function Get-HelpReport {
     $ed = Get-Cfg 'ASSISTENTE_AVISO_EDITOR' 'auto'
     Add-Item 'Aviso de sessão' 'Avisar quando uma sessão para e espera você' $(if ($hooksOn -and $avisoCfg) { 'ativo' } else { 'inativo' }) ("turno de $(Get-Cfg 'ASSISTENTE_AVISO_MIN_SEG' '60') s ou mais, autorização ou pergunta pendente; editor: $ed" + $(if (-not $hooksOn) { '; hooks não registrados' } elseif (-not $avisoCfg) { '; desligado no .env' } else { '' })) 'ASSISTENTE_AVISO_SESSAO=1|0 no .env; hooks: install.ps1 (ou -SemAvisoSessao)'
     Add-Item 'Aviso de sessão' 'Link de volta à sessão' $(if ($hooksOn -and $avisoCfg) { 'ativo' } else { 'inativo' }) 'VS Code: link; terminal: claude --resume; T3 Code: título e pasta; Remote Control: link do celular' 'ASSISTENTE_AVISO_EDITOR=auto|vscode|cli|t3 ou ASSISTENTE_AVISO_LINK com {session}'
+    Add-Item 'Plataforma' 'Windows: onde roda' $(if ($paused) { 'inativo' } else { 'ativo' }) "neste PC ($env:COMPUTERNAME), sempre que você está logado nele: o vigia religa sozinho no logon e a cada 3 min. Ligue em um computador só por conta de WhatsApp, ou ele responde em dobro" 'para não rodar aqui: "desliga meu assistente" (fica desligado até você religar, mesmo reiniciando) ou install.ps1 -Remover; depois instale e ligue no computador de trabalho'
     Add-Item 'Plataforma' 'Mac' 'inativo' 'previsto para a v2' '—'
     ,$items
 }
@@ -779,6 +795,7 @@ try {
             }
             if ($Owner) { $pairs['ASSISTENTE_DONO'] = $Owner.Trim() }
             if ($Mode) { $pairs['ASSISTENTE_AUTONOMIA'] = $Mode }
+            if ($Genero) { $pairs['ASSISTENTE_GENERO'] = $Genero }
             if ($Fuso) {
                 try { $null = Resolve-Fuso $Fuso } catch { Out-Json ([ordered]@{ saved = $false; reason = 'fuso_invalido'; dica = 'use GMT-3, UTC+1, GMT+5:30 ou um id do Windows' }); exit 2 }
                 $pairs['ASSISTENTE_FUSO'] = $Fuso.Trim()
@@ -791,7 +808,7 @@ try {
                 }
                 else { $pairs['ASSISTENTE_CONTA_JID'] = (Get-BaseJid $Jid) }
             }
-            if ($pairs.Count -eq 0) { throw 'informe ao menos um de -Name, -Owner, -Jid, -Mode, -Fuso' }
+            if ($pairs.Count -eq 0) { throw 'informe ao menos um de -Name, -Owner, -Jid, -Mode, -Fuso, -Genero' }
             Set-EnvKeys $pairs
             $shown = [ordered]@{}; foreach ($k in $pairs.Keys) { $shown[$k] = $(if ($k -like '*JID') { Mask $pairs[$k] } else { $pairs[$k] }) }
             Out-Json ([ordered]@{ saved = $true; file = $ConfigPath; values = $shown }); exit 0
@@ -969,7 +986,7 @@ try {
         'resolve' { $r = Resolve-Recipient $Name; Out-Json $r; if ($r.status -eq 'unique') { exit 0 } else { exit 2 } }
         'config' {
             $o = [ordered]@{ config_file = $ConfigPath; config_file_exists = (Test-Path -LiteralPath $ConfigPath) }
-            foreach ($k in 'ASSISTENTE_NOME', 'ASSISTENTE_DONO', 'ASSISTENTE_CONTA_JID', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_MCP_URL', 'ASSISTENTE_AUTONOMIA', 'ASSISTENTE_FUSO', 'ASSISTENTE_FUSO_TIME', 'ASSISTENTE_ESPERA_MIN', 'ASSISTENTE_EQUIPE', 'ASSISTENTE_PERSONA', 'ASSISTENTE_PASTA_TRABALHO', 'ASSISTENTE_DESPACHANTE', 'ASSISTENTE_CLAUDE_PERMISSAO') {
+            foreach ($k in 'ASSISTENTE_NOME', 'ASSISTENTE_DONO', 'ASSISTENTE_CONTA_JID', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_MCP_URL', 'ASSISTENTE_AUTONOMIA', 'ASSISTENTE_GENERO', 'ASSISTENTE_FUSO', 'ASSISTENTE_FUSO_TIME', 'ASSISTENTE_ESPERA_MIN', 'ASSISTENTE_EQUIPE', 'ASSISTENTE_PERSONA', 'ASSISTENTE_PASTA_TRABALHO', 'ASSISTENTE_DESPACHANTE', 'ASSISTENTE_CLAUDE_PERMISSAO') {
                 $v = Get-Cfg $k
                 if ($k -like '*JID' -and $v) { $v = Mask $v }
                 $o[$k] = $v

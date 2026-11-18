@@ -6,9 +6,29 @@ Ele atende os colegas pelo **seu** WhatsApp: responde quem pergunta do estado de
 conferido na fonte e com link), lê os grupos do time e te traz o que importa. Também te avisa quando uma sessão sua
 do Claude Code termina e está esperando por você.
 
-**Você batiza o seu assistente e escolhe a personalidade dele.** Há quatro prontas (objetiva, cordial, técnica e
-leve), e você pode ajustar quando quiser, só pedindo. Ou pode não mexer nunca: ele funciona bem do jeito que vem.
-O que não muda em nenhuma personalidade é a **objetividade**: mensagem curta, clara, cortês e com o próximo passo.
+**Você batiza o seu assistente e escolhe a personalidade dele.** O gênero ("ela" ou "ele") é opcional; sem
+escolha, ele fala de forma neutra. Há seis personalidades prontas, e você pode ajustar quando quiser, só pedindo.
+Ou pode não mexer nunca: ele funciona bem do jeito que vem.
+
+| Personalidade | Com você | Com o time |
+|---|---|---|
+| Objetiva (padrão) | direta e cortês, sem enfeite nem humor | igual |
+| Cordial | calorosa e acolhedora, mas curta | igual |
+| Técnica | dev para dev: termos exatos, listas, links | igual |
+| Leve | uma frase bem-humorada quando cabe | igual |
+| Amorosa | sua webnamorada particular, pela zoeira | cordial |
+| Parça | sem polimento: gíria, palavrão e zoeira | leve, sem palavrão |
+
+O que não muda em nenhuma personalidade é a **objetividade**: mensagem clara, com o próximo passo, e sem zoeira
+em urgência, produção ou erro. Com o time, cortesia sempre.
+
+## Onde ele roda (leia antes de instalar)
+
+- **No seu Windows, sempre que você estiver logado nele.** O vigia do Agendador do Windows religa o assistente no
+  logon e a cada 3 minutos. Não precisa deixar nenhuma sessão do Claude aberta.
+- **Não quer que rode nesta máquina?** Desative: diga "desliga meu assistente" (fica desligado até você religar,
+  mesmo reiniciando) ou desinstale com `install.ps1 -Remover`. Depois, instale e ligue no computador de trabalho.
+- **Um computador só por conta de WhatsApp.** Com dois ligados na mesma conta, ele responde em dobro.
 
 ## Como funciona
 

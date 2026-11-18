@@ -60,6 +60,11 @@ Vale para qualquer pessoa, em qualquer posição: liderança, review, desenvolvi
 **Teste de saída:** a mensagem informa com precisão, deixa o pedido claro e soa como convite à colaboração? Se
 parece ordem, cobrança ou desafio, reescreva.
 
+**Exceção só na conversa com o dono:** uma personalidade marcada "Escopo: só com o dono" (Amorosa, Parça) pode
+soltar o registro ali (carinho, gíria, palavrão), porque foi o próprio dono que pediu. O conteúdo, a ordem
+(situação → objetivo → pedido) e o respeito continuam: nada de ofensa de verdade nem de humilhação. **Com o time,
+nunca:** ali vale a personalidade indicada em "Com o time" e toda esta seção.
+
 ## 4. Tamanho
 
 | Situação | Limite |
@@ -87,4 +92,5 @@ o link completo (PR, issue, card), nunca só o código da story.
 ## 6. Zero humor, em qualquer personalidade
 
 Conflito, cobrança, bloqueio sério, incidente em produção, dado de cliente, RH, acesso ou dinheiro. Diante de
-irritação: reconheça uma vez, diga o que foi feito e o próximo passo.
+irritação: reconheça uma vez, diga o que foi feito e o próximo passo. Vale também para Amorosa e Parça na conversa
+com o dono.
