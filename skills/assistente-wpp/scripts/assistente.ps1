@@ -705,7 +705,7 @@ function Get-HelpReport {
         $pDet = "$presetName; $nAdj ajuste(s) seu(s)" + $(if ($scope) { "; esse tom é só com você, com o time fala no tom $scope" } else { '' })
         Add-Item 'Identidade' 'Personalidade' 'ativo' $pDet '"deixa meu assistente mais X" (ajuste) ou "muda para a personalidade técnica" (troca)'
     }
-    else { Add-Item 'Identidade' 'Personalidade' 'inativo' 'nenhuma escolhida' '"configura meu assistente de WhatsApp"' }
+    else { Add-Item 'Identidade' 'Personalidade' 'inativo' 'nenhuma escolhida' '"configure meu assistente de WhatsApp"' }
     $gen = Get-Cfg 'ASSISTENTE_GENERO'
     Add-Item 'Identidade' 'Gênero do assistente (opcional)' $(if ($gen -and $gen -ne 'neutro') { 'ativo' } else { 'inativo' }) $(if ($gen -and $gen -ne 'neutro') { "$gen (concordância: $(if ($gen -eq 'feminino') { 'obrigada' } else { 'obrigado' }))" } else { 'não definido: formas neutras' }) '"meu assistente é ela/ele" ou "deixa neutro" (ASSISTENTE_GENERO)'
     try {

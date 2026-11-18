@@ -66,7 +66,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 Depois, abra o Claude Code e diga:
 
-> configura meu assistente de WhatsApp
+> configure meu assistente de WhatsApp
 
 Ele te guia: o nome do assistente, a personalidade, quem é do time, quanta autonomia ele tem e onde você programa.
 Leva uns 10 minutos.

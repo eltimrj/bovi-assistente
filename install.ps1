@@ -172,4 +172,4 @@ Write-Output '(o vigia o religa no logon e a cada 3 min, sem sessão do Claude a
 Write-Output 'Se não quiser que rode aqui, desative ("desliga meu assistente", ou install.ps1 -Remover) e instale no'
 Write-Output 'computador de trabalho. Ligue em um computador só por conta de WhatsApp, ou ele responde em dobro.'
 Write-Output ''
-Write-Output 'Pronto. Abra o Claude Code e diga: "configura meu assistente de WhatsApp".'
+Write-Output 'Pronto. Abra o Claude Code e diga: "configure meu assistente de WhatsApp".'
