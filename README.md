@@ -51,10 +51,28 @@ Depois, abra o Claude Code e diga:
 Ele te guia: o nome do assistente, a personalidade, quem é do time, quanta autonomia ele tem e onde você programa.
 Leva uns 10 minutos.
 
+## Manual: o que está ligado
+
+Para ver tudo o que o assistente faz e o que está ativo ou não neste momento, diga ao Claude:
+
+> /assistente-wpp help
+
+ou "ajuda do assistente". No terminal, sem o Claude:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.claude\skills\assistente-wpp\scripts\assistente.ps1" help
+```
+
+Ele lista cada função por área (identidade, conexão, atendimento, funcionamento, aviso de sessão e
+plataforma) e mostra para cada uma se está `[ativo]`, `[inativo]` ou pedindo `[atenção]`, com o jeito de mudar.
+Você também pode escrever "ajuda" na conversa consigo mesmo no WhatsApp: o assistente responde ali com um resumo.
+Para usar em script, há o `help -Json`.
+
 ## No dia a dia
 
 | Você quer | Diga ao Claude, ou faça |
 |---|---|
+| Ver o que está ligado | "/assistente-wpp help" ou "ajuda do assistente" |
 | Ajustar a personalidade | "deixa meu assistente mais direto", "pode usar emoji" |
 | Trocar de personalidade | "muda meu assistente para a personalidade técnica" |
 | Trocar o nome | "troca o nome do meu assistente para X" |

@@ -11,7 +11,7 @@ New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $utf8 = New-Object Text.UTF8Encoding $false
 
 # Isolamento: nada lê a configuração real, nada alcança o app real (porta 9 fechada), nada sobe o despachante.
-$keys = 'ASSISTENTE_HOME', 'ASSISTENTE_CONFIG_FILE', 'ASSISTENTE_STATE_DIR', 'ASSISTENTE_MCP_URL', 'ASSISTENTE_NOME', 'ASSISTENTE_DONO', 'ASSISTENTE_CONTA_JID', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_AUTONOMIA', 'ASSISTENTE_DESPACHANTE', 'ASSISTENTE_SEM_TOAST', 'ASSISTENTE_EQUIPE', 'ASSISTENTE_PERSONA'
+$keys = 'ASSISTENTE_HOME', 'ASSISTENTE_CONFIG_FILE', 'ASSISTENTE_STATE_DIR', 'ASSISTENTE_MCP_URL', 'ASSISTENTE_NOME', 'ASSISTENTE_DONO', 'ASSISTENTE_CONTA_JID', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_AUTONOMIA', 'ASSISTENTE_DESPACHANTE', 'ASSISTENTE_SEM_TOAST', 'ASSISTENTE_EQUIPE', 'ASSISTENTE_PERSONA', 'ASSISTENTE_AVISO_SESSAO', 'ASSISTENTE_AVISO_LINK', 'ASSISTENTE_DESPACHADO', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_ENTRYPOINT'
 $saved = @{}; foreach ($k in $keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $null) }
 $env:ASSISTENTE_HOME = $tmp
 $env:ASSISTENTE_CONFIG_FILE = Join-Path $tmp 'assistente.env'
@@ -144,6 +144,8 @@ try {
     Check 'allow: removido, volta a ser fora do time' ((Run @('team', '-Chat', $strangerJid)).Rc -eq 2)
     $null = Run @('allow', 'add', '-Chat', '5500912348888@s.whatsapp.net', '-Due', '2020-01-01T00:00:00-03:00')
     Check 'allow: liberação vencida não vale' ((Run @('team', '-Chat', '5500912348888@s.whatsapp.net')).Rc -eq 2)
+    $ho = (Run @('help')).Out
+    Check 'help: com o app fechado, mostra a conexão inativa e não quebra' (($ho -match 'Manual de Jarvis') -and ($ho -match '\[inativo\] App WhatsApp MCP')) $ho
     $null = Run @('pause', 'on')
     Check 'pausa: send recusado' ((Reason (Send $memberJid)) -eq 'pausado')
     $null = Run @('pause', 'off')
@@ -256,6 +258,24 @@ try {
         $sent = @(Get-Requests | Where-Object { $_.tool -eq 'send_text_message' })[-1]
         Check 'send: envia com o prefixo do nome escolhido e registra' ((((J $s).sent) -eq $true) -and ($sent.arguments.text -eq '*Jarvis:* Oi, Dev!') -and ((Run @('is-ours', '-MessageId', 'FAKE-1')).Rc -eq 0)) $s.Out
         Check 'intro: quem já recebeu mensagem não é reapresentado' (((J (Run @('intro-needed', '-Chat', $memberJid))).intro_needed) -eq $false)
+
+        # Manual (help): estado real de cada funcionalidade
+        $env:CLAUDE_CONFIG_DIR = $inst
+        $null = & powershell @ia   # hooks de volta no settings.json de teste
+        $hp = (Run @('help')).Out
+        Check 'help: título com o nome do assistente' ($hp -match 'Manual de Jarvis') $hp
+        Check 'help: app conectado aparece ativo' ($hp -match '\[ativo\]\s+App WhatsApp MCP: conta \*\*\*\*0100 conectada') $hp
+        Check 'help: despachante parado aparece inativo' ($hp -match '\[inativo\] Despachante') $hp
+        Check 'help: personalidade e ajustes' ($hp -match '\[ativo\]\s+Personalidade: Técnica') $hp
+        Check 'help: aviso de sessão ativo com os hooks registrados' ($hp -match '\[ativo\]\s+Avisar quando uma sessão para') $hp
+        Check 'help: cada item diz como mudar' (([regex]::Matches($hp, 'como mudar:')).Count -ge 15) $hp
+        $env:ASSISTENTE_AVISO_SESSAO = '0'
+        Check 'help: aviso desligado no .env aparece inativo' ((Run @('help')).Out -match '\[inativo\] Avisar quando.*desligado no \.env')
+        $env:ASSISTENTE_AVISO_SESSAO = $null
+        $null = Run @('pause', 'on')
+        $hj = J (Run @('help', '-Json'))
+        Check 'help -Json: pausado aparece em Ligado = inativo' ((@($hj.itens | Where-Object { $_.funcionalidade -eq 'Ligado' })[0].estado) -eq 'inativo') ($hj | ConvertTo-Json -Compress -Depth 5)
+        $null = Run @('pause', 'off')
 
         # Vigia
         function Set-Hb([int]$AgeMin) { [IO.File]::WriteAllText((Join-Path $tmp 'state\watch-heartbeat.json'), ('{"ts":"' + (IsoAgo $AgeMin) + '","pid":1,"gateway_ok":true}'), $utf8) }

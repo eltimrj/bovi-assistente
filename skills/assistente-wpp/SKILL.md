@@ -1,6 +1,6 @@
 ---
 name: assistente-wpp
-description: 'Assistente de WhatsApp pessoal de cada dev do time: responde sozinho aos colegas pelo WhatsApp do dono (estado de PR, card e story, conferido na fonte e com link), lê os grupos do time e leva ao dono o que importa, com objetividade e cortesia. Cada dev batiza o seu assistente e escolhe a personalidade (objetiva, cordial, técnica ou leve), que pode evoluir a pedido dele. Funciona sem sessão aberta (despachante + vigia no Windows) sobre o app WhatsApp MCP. Use quando o dev disser "configura meu assistente de WhatsApp", "assistente-wpp", "meu assistente", "atende o time no WhatsApp", "muda a personalidade do meu assistente", "troca o nome do meu assistente", "liga/desliga o assistente", "manda pro Fulano que..." ou quando o despachante acordar com [assistente-wpp - modo despachado].'
+description: 'Assistente de WhatsApp pessoal de cada dev do time: responde sozinho aos colegas pelo WhatsApp do dono (estado de PR, card e story, conferido na fonte e com link), lê os grupos do time e leva ao dono o que importa, com objetividade e cortesia. Cada dev batiza o seu assistente e escolhe a personalidade (objetiva, cordial, técnica ou leve), que pode evoluir a pedido dele. Funciona sem sessão aberta (despachante + vigia no Windows) sobre o app WhatsApp MCP. Use quando o dev disser "/assistente-wpp help", "ajuda do assistente", "o que meu assistente faz", "manual do assistente", "configura meu assistente de WhatsApp", "assistente-wpp", "meu assistente", "atende o time no WhatsApp", "muda a personalidade do meu assistente", "troca o nome do meu assistente", "liga/desliga o assistente", "manda pro Fulano que..." ou quando o despachante acordar com [assistente-wpp - modo despachado].'
 ---
 
 # assistente-wpp
@@ -9,6 +9,16 @@ Assistente de WhatsApp de **um** dev (o **dono**), na conta pessoal dele, para c
 dá um nome ao assistente e escolhe a personalidade. A objetividade é a mesma para todos.
 
 `$S` = `scripts/assistente.ps1` desta skill. `$D` = `scripts/assistente-despachante.ps1`.
+
+## Ajuda: o manual
+
+Pedido de ajuda (`/assistente-wpp help`, "ajuda", "o que meu assistente faz", "o que está ligado?"): rode
+`& $S help` e mostre o resultado ao dono como está. É o manual vivo: cada funcionalidade com o estado real nesta
+máquina (`[ativo]`, `[inativo]`, `[atenção]`) e como mudar. Não precisa de onboarding completo para funcionar: num
+assistente ainda não configurado, ele mostra o que falta. Para tratar os dados, use `& $S help -Json`.
+
+Depois do manual, ofereça em uma linha o próximo passo óbvio (por exemplo, ligar o que está `[inativo]` e parece
+ter ficado assim sem querer). Não ligue nada sem o dono pedir.
 
 ## 0. Antes de qualquer coisa
 

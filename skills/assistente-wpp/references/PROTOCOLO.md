@@ -40,7 +40,7 @@ Telefone nunca entra em repositório.
 | `EVENT grupo chat=… nome="…" responder=nao\|sim` | mensagem num grupo do time | §5 |
 | `EVENT assumido chat=… quem="…"` | o dono escreveu do celular nessa conversa | já está em espera; **não responda** |
 | `EVENT espera equipe chat=… dono_ultima=<hora>` | alguém escreveu numa conversa em espera | silêncio (§6) |
-| `EVENT dono chat=…` | o dono escreveu na conversa consigo mesmo | é pedido dele: leia e atenda dentro destas regras |
+| `EVENT dono chat=…` | o dono escreveu na conversa consigo mesmo | é pedido dele: leia e atenda dentro destas regras. "ajuda", "help" ou "/help": rode `help` e responda ali uma versão curta (um item por linha, só funcionalidade e estado) |
 | `ERRO …` / `RECOVERED` | app caiu / voltou | reconciliar: conferir o que chegou no intervalo |
 
 ## 4. Atender alguém do time

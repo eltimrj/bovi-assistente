@@ -2,6 +2,7 @@
 assistente-wpp: utilitários determinísticos do assistente de WhatsApp de cada dev.
 Nenhum deles chama modelo de IA. Só `send` envia mensagem, e só com o volante (lease) válido.
 
+  assistente.ps1 help [-Json]                                manual: o que o assistente faz, o que está ativo/inativo e como mudar
   assistente.ps1 setup [-Name "<nome do assistente>"] [-Owner "<seu nome>"] [-Jid <linked_jid>|auto] [-Mode responder|triagem]
                                                              grava/atualiza a configuração privada; -Jid auto lê do app
   assistente.ps1 check                                       a configuração está pronta? (rc 0 = sim; lista o que falta)
@@ -33,7 +34,7 @@ mesmo nome têm precedência. Código de saída 2 = recusado; 1 = erro.
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('setup', 'check', 'persona', 'prefix', 'lease', 'sent', 'is-ours', 'watch', 'account', 'messages', 'send', 'config', 'resolve', 'name-key', 'name-match', 'heartbeat', 'followup', 'pause', 'intro-needed', 'team', 'allow', 'hold')]
+    [ValidateSet('help', 'setup', 'check', 'persona', 'prefix', 'lease', 'sent', 'is-ours', 'watch', 'account', 'messages', 'send', 'config', 'resolve', 'name-key', 'name-match', 'heartbeat', 'followup', 'pause', 'intro-needed', 'team', 'allow', 'hold')]
     [string]$Command,
     [Parameter(Position = 1)][string]$Action,
     [string]$Text,
@@ -42,7 +43,7 @@ param(
     [string]$Id, [string]$Chat, [string]$MessageId, [string]$Since, [int]$Limit = 30,
     [string]$Name, [string]$Owner, [string]$Jid, [ValidateSet('', 'responder', 'triagem')][string]$Mode = '',
     [string]$Due, [string]$Note, [int]$MaxAgeSeconds = 120,
-    [int]$IntervalSeconds = 30, [switch]$Once, [switch]$DryRun, [switch]$NewContactConfirmed, [switch]$OwnerRequested, [switch]$Force
+    [int]$IntervalSeconds = 30, [switch]$Once, [switch]$DryRun, [switch]$NewContactConfirmed, [switch]$OwnerRequested, [switch]$Force, [switch]$Json
 )
 
 $ErrorActionPreference = 'Stop'
@@ -643,10 +644,95 @@ function Get-CheckProblems {
     $p
 }
 
+# ---------- manual (help) ----------
+
+# Cada funcionalidade com o estado real nesta máquina: ativo, inativo ou atenção, e como mudar.
+function Get-HelpReport {
+    $items = New-Object System.Collections.Generic.List[object]
+    function Add-Item([string]$Area, [string]$Feature, [string]$State, [string]$Detail, [string]$How) {
+        $items.Add([ordered]@{ area = $Area; funcionalidade = $Feature; estado = $State; detalhe = $Detail; como_mudar = $How })
+    }
+    $nameOk = $AssistantName -and -not (Test-AssistantName $AssistantName)
+    Add-Item 'Identidade' 'Nome do assistente' $(if ($nameOk) { 'ativo' } else { 'inativo' }) $(if ($nameOk) { "$AssistantName, assistente virtual de $OwnerName; assina *$($AssistantName.Trim()):*" } else { 'sem nome' }) '"troca o nome do meu assistente para X"'
+    $presetName = ''
+    if (Test-Path -LiteralPath $PersonaPath) {
+        $head = Get-Content -LiteralPath $PersonaPath -Encoding UTF8 -TotalCount 1
+        $presetName = ($head -replace '^#\s*Personalidade:\s*', '').Trim()
+        $adj = @((Get-Content -LiteralPath $PersonaPath -Raw -Encoding UTF8) -split 'Ajustes do dono', 2)
+        $nAdj = if ($adj.Count -gt 1) { @($adj[1] -split "`n" | Where-Object { $_ -match '^\s*-\s+\S' }).Count } else { 0 }
+        Add-Item 'Identidade' 'Personalidade' 'ativo' "$presetName; $nAdj ajuste(s) seu(s)" '"deixa meu assistente mais X" (ajuste) ou "muda para a personalidade técnica" (troca)'
+    }
+    else { Add-Item 'Identidade' 'Personalidade' 'inativo' 'nenhuma escolhida' '"configura meu assistente de WhatsApp"' }
+
+    $app = 'inativo'; $appDet = 'app WhatsApp MCP não respondeu'
+    try {
+        $linked = (Invoke-Mcp 'whatsapp_status' @{}).wacli.linked_jid
+        if ($linked -and $AccountJid -and (Get-PhoneKey $linked) -eq (Get-PhoneKey $AccountJid)) { $app = 'ativo'; $appDet = "conta $(Mask $linked) conectada" }
+        elseif ($linked) { $app = 'atenção'; $appDet = "conectada a outra conta ($(Mask $linked))" }
+        else { $appDet = 'app aberto, sem WhatsApp conectado' }
+    } catch { }
+    Add-Item 'Conexão' 'App WhatsApp MCP' $app $appDet 'abrir o app e conectar pelo QR Code; depois "setup -Jid auto"'
+
+    $team = Read-Team
+    $nm = @($team.members).Count; $ng = @($team.groups).Count; $ngr = @($team.groups | Where-Object { $_.respond }).Count
+    $nx = @($team.extra | Where-Object { -not $_.until -or [DateTimeOffset]::Parse($_.until) -gt (Now-Utc) }).Count
+    Add-Item 'Atendimento' 'Responder ao time' $(if ($nm -eq 0) { 'inativo' } elseif ($Autonomy -eq 'responder') { 'ativo' } else { 'inativo' }) $(if ($Autonomy -eq 'responder') { "responde sozinho a $nm pessoa(s) do time" } else { "modo triagem: lê e leva a você ($nm pessoa(s))" }) '"deixa meu assistente só em triagem" / "volta a responder sozinho"'
+    Add-Item 'Atendimento' 'Grupos do time' $(if ($ng -gt 0) { 'ativo' } else { 'inativo' }) "$ng grupo(s) vigiado(s); responde em $ngr" '"vigia o grupo X" / "pode responder no grupo X"'
+    Add-Item 'Atendimento' 'Contatos fora do time' $(if ($nx -gt 0) { 'ativo' } else { 'inativo' }) "$nx liberado(s) por você" '"atende o Fulano sobre X até sexta"'
+    $holds = Get-HoldMap
+    Add-Item 'Atendimento' 'Silêncio quando você escreve' 'ativo' "$HoldMinutes min depois da sua última mensagem; $($holds.Count) conversa(s) em espera agora" '"fica fora da conversa com X" (espera manual) / "volta a atender X"'
+    $fu = @(Get-FollowupItems | Where-Object { -not $_.done }).Count
+    Add-Item 'Atendimento' 'Retornos prometidos' 'ativo' "$fu pendente(s)" 'o assistente registra sozinho quando promete retorno'
+    Add-Item 'Atendimento' 'Recado a pedido seu' 'ativo' 'pelo Claude Code ou escrevendo na conversa consigo mesmo no WhatsApp' '"manda pro Fulano que…"'
+
+    $paused = Test-Path -LiteralPath $PausePath
+    Add-Item 'Funcionamento' 'Ligado' $(if ($paused) { 'inativo' } else { 'ativo' }) $(if ($paused) { 'pausado por você' } else { 'não pausado' }) '"desliga meu assistente" / "religa meu assistente"'
+    $dRun = $false
+    try { $null = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'assistente-despachante.ps1') -Mode status 2>$null; $dRun = ($LASTEXITCODE -eq 0) } catch { }
+    Add-Item 'Funcionamento' 'Despachante (sem sessão aberta)' $(if ($dRun) { 'ativo' } else { 'inativo' }) $(if ($dRun) { 'abre o Claude a cada lote de mensagens' } else { 'parado: ninguém é atendido' }) 'o vigia sobe sozinho em até 3 min; ou "assistente-despachante.ps1 -Mode start"'
+    $hb = Get-Heartbeat 120
+    Add-Item 'Funcionamento' 'Detector de mensagens' $(if ($hb.status -eq 'ok') { 'ativo' } elseif ($hb.status -eq 'gateway_fora') { 'atenção' } else { 'inativo' }) "batimento: $($hb.status)" 'sobe junto com o despachante'
+    $task = $null; try { $task = Get-ScheduledTask -TaskName 'AssistenteWppVigia' -ErrorAction Stop } catch { }
+    Add-Item 'Funcionamento' 'Vigia (Agendador do Windows)' $(if ($task -and $task.State -ne 'Disabled') { 'ativo' } else { 'inativo' }) $(if ($task) { "tarefa AssistenteWppVigia: $($task.State)" } else { 'tarefa não registrada' }) 'rodar o install.ps1 de novo'
+
+    $cfgDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $env:USERPROFILE '.claude' }
+    $hooksOn = $false
+    try { $hooksOn = (Get-Content -LiteralPath (Join-Path $cfgDir 'settings.json') -Raw -Encoding UTF8) -match 'assistente-wpp\\\\scripts\\\\aviso-sessao' } catch { }
+    $avisoCfg = (Get-Cfg 'ASSISTENTE_AVISO_SESSAO' '1') -ne '0'
+    $ed = Get-Cfg 'ASSISTENTE_AVISO_EDITOR' 'auto'
+    Add-Item 'Aviso de sessão' 'Avisar quando uma sessão para e espera você' $(if ($hooksOn -and $avisoCfg) { 'ativo' } else { 'inativo' }) ("turno de $(Get-Cfg 'ASSISTENTE_AVISO_MIN_SEG' '60') s ou mais, autorização ou pergunta pendente; editor: $ed" + $(if (-not $hooksOn) { '; hooks não registrados' } elseif (-not $avisoCfg) { '; desligado no .env' } else { '' })) 'ASSISTENTE_AVISO_SESSAO=1|0 no .env; hooks: install.ps1 (ou -SemAvisoSessao)'
+    Add-Item 'Aviso de sessão' 'Link de volta à sessão' $(if ($hooksOn -and $avisoCfg) { 'ativo' } else { 'inativo' }) 'VS Code: link; terminal: claude --resume; T3 Code: título e pasta; Remote Control: link do celular' 'ASSISTENTE_AVISO_EDITOR=auto|vscode|cli|t3 ou ASSISTENTE_AVISO_LINK com {session}'
+    Add-Item 'Plataforma' 'Mac' 'inativo' 'previsto para a v2' '—'
+    ,$items
+}
+
+function Format-HelpText($Items) {
+    $sb = New-Object Text.StringBuilder
+    $title = if ($AssistantName) { "Manual de $($AssistantName.Trim())" } else { 'Manual do assistente de WhatsApp' }
+    [void]$sb.AppendLine($title)
+    [void]$sb.AppendLine('')
+    $mark = @{ 'ativo' = '[ativo]  '; 'inativo' = '[inativo]'; 'atenção' = '[atenção]' }
+    foreach ($g in ($Items | Group-Object { $_.area })) {
+        [void]$sb.AppendLine($g.Name)
+        foreach ($i in $g.Group) {
+            [void]$sb.AppendLine(('  {0} {1}: {2}' -f $mark[$i.estado], $i.funcionalidade, $i.detalhe))
+            [void]$sb.AppendLine(('             como mudar: {0}' -f $i.como_mudar))
+        }
+        [void]$sb.AppendLine('')
+    }
+    [void]$sb.AppendLine('Sempre valem, em qualquer personalidade: objetividade, cortesia, conferir na fonte antes de afirmar, sigilo, e nenhuma ação além de conversar sem o seu ok.')
+    $sb.ToString().TrimEnd()
+}
+
 # ---------- despacho ----------
 
 try {
     switch ($Command) {
+        'help' {
+            $rep = Get-HelpReport
+            if ($Json) { Out-Json ([ordered]@{ assistente = $AssistantName; dono = $OwnerName; itens = $rep }) } else { Write-Output (Format-HelpText $rep) }
+            exit 0
+        }
         'setup' {
             $pairs = @{}
             if ($Name) {

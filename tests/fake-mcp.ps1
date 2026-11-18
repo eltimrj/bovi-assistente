@@ -40,7 +40,11 @@ while ($true) {
         $tool = $req.params.name
         [IO.File]::AppendAllText((Join-Path $Dir 'requests.jsonl'), (([ordered]@{ tool = $tool; arguments = $req.params.arguments } | ConvertTo-Json -Compress -Depth 6) + "`n"), $utf8)
         $map = Get-Content -Raw -LiteralPath (Join-Path $Dir 'responses.json') -Encoding UTF8 | ConvertFrom-Json
-        $spec = $map.$tool
+        # Resposta por conversa: "<ferramenta>@<chat_jid>" vence a resposta geral da ferramenta.
+        $spec = $null
+        $cj = [string]$req.params.arguments.chat_jid
+        if ($cj) { $spec = $map.("$tool@$cj") }
+        if (-not $spec) { $spec = $map.$tool }
         if ($spec -and $spec.text) { $result = @{ content = @(@{ type = 'text'; text = [string]$spec.text }); isError = $false } }
         else {
             $msg = if ($spec -and $spec.error) { [string]$spec.error } else { "ferramenta $tool sem resposta no teste" }

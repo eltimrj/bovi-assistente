@@ -292,6 +292,9 @@ function Start-ClaudeRun([string]$Prompt) {
     }
     else { $cargs += @('--permission-mode', 'auto') }
     if ($resume) { $cargs += @('--resume', $resume) }
+    # Argumentos extras do dono (ex.: --model, --strict-mcp-config), separados por espaço.
+    $extra = Get-Cfg 'ASSISTENTE_CLAUDE_ARGS'
+    if ($extra) { $cargs += @($extra -split '\s+' | Where-Object { $_ }) }
     $psi = New-Object Diagnostics.ProcessStartInfo
     $psi.FileName = $ClaudeExe
     $psi.Arguments = ($cargs | ForEach-Object { if ($_ -match '[\s()*]') { '"' + $_ + '"' } else { $_ } }) -join ' '
