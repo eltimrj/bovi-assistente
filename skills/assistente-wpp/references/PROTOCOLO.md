@@ -71,6 +71,9 @@ nunca apresenta decisão que não foi tomada.
 - O que vale vai ao dono (§7) em uma ou duas linhas: quem, o quê, o que ele precisa fazer. Assuntos em sequência vão
   juntos.
 - Responder no grupo só com `responder=sim`, dentro do que o dono autorizou.
+- Ao responder alguém no grupo, marque a pessoa: `@<número com DDI>` no texto (o número vem do `equipe.json` ou do
+  remetente da mensagem). O `send` reconhece o `@` e manda a marcação ao WhatsApp, que mostra o nome e notifica.
+  Mensagem já enviada não se edita para marcar.
 
 ## 6. Conversa em espera (o dono assumiu)
 

@@ -330,6 +330,10 @@ try {
         $s = Run @('send', '-Chat', $memberJid, '-Text', 'Oi, Dev!', '-Operator', 'claude', '-Token', $tk, '-NewContactConfirmed')
         $sent = @(Get-Requests | Where-Object { $_.tool -eq 'send_text_message' })[-1]
         Check 'send: envia com o prefixo do nome escolhido e registra' ((((J $s).sent) -eq $true) -and ($sent.arguments.text -eq '*Jarvis:* Oi, Dev!') -and ((Run @('is-ours', '-MessageId', 'FAKE-1')).Rc -eq 0)) $s.Out
+        Check 'send: sem @ no texto, não manda marcação' ($null -eq $sent.arguments.mentions) ($sent | ConvertTo-Json -Compress -Depth 5)
+        $s = Run @('send', '-Chat', $memberJid, '-Text', 'Oi, @5500912340001! Vê com @5500912349999 e @5500912340001; dev@5500900000000 não é marcação.', '-Operator', 'claude', '-Token', $tk)
+        $sent = @(Get-Requests | Where-Object { $_.tool -eq 'send_text_message' })[-1]
+        Check 'send: @número no texto vira marcação (sem repetir, sem pegar e-mail)' ((((J $s).sent) -eq $true) -and ((@($sent.arguments.mentions) -join ',') -eq '5500912340001,5500912349999')) ($sent | ConvertTo-Json -Compress -Depth 5)
         Check 'intro: quem já recebeu mensagem não é reapresentado' (((J (Run @('intro-needed', '-Chat', $memberJid))).intro_needed) -eq $false)
 
         # Manual (help): estado real de cada funcionalidade

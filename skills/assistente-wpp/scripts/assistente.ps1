@@ -898,7 +898,11 @@ try {
             if (-not $known) { try { $known = @((Invoke-Mcp 'get_chat_messages' @{ chat_jid = $Chat; limit = 1 }).messages).Count -gt 0 } catch { $known = $false } }
             if (-not $known -and -not $NewContactConfirmed) { Refuse 'primeiro_contato_sem_confirmacao' 'rode resolve -Name, mostre os candidatos ao dono e use -NewContactConfirmed só depois que ele confirmar este número' }
             if ($DryRun) { Out-Json ([ordered]@{ sent = $false; dry_run = $true; chat = $Chat; text = $msg }); exit 0 }
-            $r = Invoke-Mcp 'send_text_message' @{ to = $Chat; text = $msg }
+            # Marcação: cada @<número com DDI> no texto vai também em mentions, para o WhatsApp mostrar o nome e notificar.
+            $sendArgs = @{ to = $Chat; text = $msg }
+            $mentions = @([regex]::Matches($msg, '(?<![\w@])@(\d{10,15})\b') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+            if ($mentions.Count -gt 0) { $sendArgs['mentions'] = $mentions }
+            $r = Invoke-Mcp 'send_text_message' $sendArgs
             if ($r.message_id) { Add-SentLine $Chat $r.message_id }
             Out-Json ([ordered]@{ sent = [bool]$r.sent; message_id = $r.message_id; note = $r.note }); exit 0
         }

@@ -154,7 +154,8 @@ cortesia. Nada aqui envia mensagem a ninguém do time.
 ```
 
 O `send` confere pausa, volante, quem é o destinatário, espera, modo e conta conectada, põe o prefixo e registra o
-envio. Recusas (rc 2, campo `reason`):
+envio. Para marcar alguém (em grupo, ao responder a pessoa), escreva `@<número com DDI>` no texto: o `send` manda a
+marcação junto, e o WhatsApp mostra o nome. Recusas (rc 2, campo `reason`):
 
 | `reason` | O que fazer |
 |---|---|
