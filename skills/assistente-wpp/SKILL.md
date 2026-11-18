@@ -1,6 +1,6 @@
 ---
 name: assistente-wpp
-description: 'Assistente de WhatsApp pessoal de cada dev do time: responde sozinho aos colegas pelo WhatsApp do dono (estado de PR, card e story, conferido na fonte e com link), lê os grupos do time e leva ao dono o que importa, com objetividade e cortesia. Cada dev batiza o seu assistente e escolhe a personalidade (objetiva, cordial, técnica, leve, amorosa ou parça), que pode evoluir a pedido dele. Funciona sem sessão aberta (despachante + vigia no Windows) sobre o app WhatsApp MCP. Use quando o dev disser "/assistente-wpp help", "ajuda do assistente", "o que meu assistente faz", "manual do assistente", "configure meu assistente de WhatsApp", "configura meu assistente", "assistente-wpp", "meu assistente", "atende o time no WhatsApp", "muda a personalidade do meu assistente", "troca o nome do meu assistente", "liga/desliga o assistente", "manda pro Fulano que..." ou quando o despachante acordar com [assistente-wpp - modo despachado].'
+description: 'Assistente de WhatsApp pessoal de cada dev do time: responde sozinho aos colegas pelo WhatsApp do dono (estado de PR, card e story, conferido na fonte e com link), lê os grupos do time e leva ao dono o que importa, com objetividade e cortesia. Cada dev batiza o seu assistente e escolhe a personalidade (objetiva, cordial, técnica, leve, amorosa ou parça), que pode evoluir a pedido dele. Funciona sem sessão aberta (despachante + vigia, no Windows ou no macOS) sobre o app WhatsApp MCP. Use quando o dev disser "/assistente-wpp help", "ajuda do assistente", "o que meu assistente faz", "manual do assistente", "configure meu assistente de WhatsApp", "configura meu assistente", "assistente-wpp", "meu assistente", "atende o time no WhatsApp", "muda a personalidade do meu assistente", "troca o nome do meu assistente", "liga/desliga o assistente", "manda pro Fulano que..." ou quando o despachante acordar com [assistente-wpp - modo despachado].'
 ---
 
 # assistente-wpp
@@ -8,7 +8,8 @@ description: 'Assistente de WhatsApp pessoal de cada dev do time: responde sozin
 Assistente de WhatsApp de **um** dev (o **dono**), na conta pessoal dele, para conversar com o **time**. Cada dono
 dá um nome ao assistente e escolhe a personalidade. A objetividade é a mesma para todos.
 
-`$S` = `scripts/assistente.ps1` desta skill. `$D` = `scripts/assistente-despachante.ps1`.
+`$S` = `scripts/assistente.ps1` desta skill. `$D` = `scripts/assistente-despachante.ps1`. Os exemplos usam a sintaxe do
+PowerShell (`& $S ...`). No **macOS** os scripts rodam no PowerShell 7: pelo Bash, `pwsh -NoProfile -File "$S" ...`.
 
 ## Ajuda: o manual
 
@@ -39,8 +40,9 @@ Conduza como conversa, um passo por vez, explicando em uma frase o porquê de ca
 cortesia. Nada aqui envia mensagem a ninguém do time.
 
 0. **Onde ele roda (diga antes de tudo).** Explique em poucas frases:
-   - A skill roda **neste Windows** e fica ativa **sempre que ele estiver logado nesta máquina**: o vigia do
-     Agendador do Windows religa o assistente no logon e a cada 3 min, sem sessão do Claude aberta.
+   - A skill roda **neste computador** (Windows ou Mac) e fica ativa **sempre que ele estiver logado nesta máquina**: o vigia do
+     Agendador do Windows (no Mac, um LaunchAgent) religa o assistente no login e a cada 3 min, sem sessão do Claude
+     aberta.
    - Se ele **não quiser** que rode aqui (por exemplo, é o PC pessoal e ele trabalha em outro), basta desativar:
      "desliga meu assistente" (fica desligado até ele religar, mesmo reiniciando) ou desinstalar com
      `install.ps1 -Remover`. Depois, instalar e ligar **no computador de trabalho**.
@@ -181,8 +183,9 @@ Vale para toda mensagem que o assistente inicia a alguém citado por nome.
 - **Despachante** (`$D`): laço leve que roda o detector e abre `claude -p` (sem tela) a cada lote de mensagens;
   segura o volante e confere os retornos prometidos a cada minuto. `-Mode status | start | stop`.
   Log em `~/.assistente-wpp/state/despachante.log` (só o resumo de cada lote, sem conversa).
-- **Vigia** (`scripts/assistente-vigia.ps1`, tarefa agendada `AssistenteWppVigia`, a cada 3 min): sobe o despachante
-  se ele cair e avisa o dono (WhatsApp + notificação do Windows) se o detector parar ou não ler o WhatsApp.
+- **Vigia** (`scripts/assistente-vigia.ps1`, a cada 3 min: tarefa agendada `AssistenteWppVigia` no Windows, LaunchAgent
+  `local.assistente-wpp.vigia` no Mac): sobe o despachante
+  se ele cair e avisa o dono (WhatsApp + notificação do sistema) se o detector parar ou não ler o WhatsApp.
 - **Desligar de propósito:** `& $S pause on` (despachante, vigia e `send` respeitam). Religar: `& $S pause off`.
 
 ### 7b. Aviso de sessão
@@ -234,7 +237,7 @@ Quando o prompt começa com `[assistente-wpp - modo despachado]`:
 
 ```powershell
 git -C <pasta do repositório bovi-assistente> pull
-& "<pasta do repositório>\install.ps1"
+& "<pasta do repositório>\install.ps1"          # no Mac: pwsh "<pasta do repositório>/install.ps1"
 ```
 
 Não edite a cópia instalada em `~/.claude/skills/assistente-wpp`: a próxima instalação sobrescreve. A configuração,
@@ -248,4 +251,4 @@ a equipe, a persona e o estado ficam em `~/.assistente-wpp/` e nunca são tocado
 | `heartbeat` dá `gateway_fora` | app fechado ou WhatsApp desconectado | abrir o app; conferir o QR Code |
 | `account` dá `matches: false` | outra conta conectada no app | reconectar a conta do dono ou refazer o setup |
 | lote falha no log com erro de permissão | conta sem o modo auto | `ASSISTENTE_CLAUDE_PERMISSAO=lista` no `.env` |
-| ninguém responde e o log está parado | despachante caiu e a tarefa não existe | `& "<repo>\install.ps1"` recria a tarefa; `& $D -Mode start` |
+| ninguém responde e o log está parado | despachante caiu e o vigia não existe | `& "<repo>\install.ps1"` (Mac: `pwsh <repo>/install.ps1`) recria o vigia; `& $D -Mode start` |

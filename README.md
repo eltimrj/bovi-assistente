@@ -24,8 +24,9 @@ em urgência, produção ou erro. Com o time, cortesia sempre.
 
 ## Onde ele roda (leia antes de instalar)
 
-- **No seu Windows, sempre que você estiver logado nele.** O vigia do Agendador do Windows religa o assistente no
-  logon e a cada 3 minutos. Não precisa deixar nenhuma sessão do Claude aberta.
+- **No seu Windows ou no seu Mac, sempre que você estiver logado nele.** O vigia religa o assistente no login e a
+  cada 3 minutos: no Windows, pelo Agendador; no Mac, por um LaunchAgent (`~/Library/LaunchAgents`). Não precisa
+  deixar nenhuma sessão do Claude aberta.
 - **Não quer que rode nesta máquina?** Desative: diga "desliga meu assistente" (fica desligado até você religar,
   mesmo reiniciando) ou desinstale com `install.ps1 -Remover`. Depois, instale e ligue no computador de trabalho.
 - **Um computador só por conta de WhatsApp.** Com dois ligados na mesma conta, ele responde em dobro.
@@ -38,7 +39,8 @@ WhatsApp ── app WhatsApp MCP ── detector (sem IA, a cada 30 s)
                                      ▼
                               despachante ── abre o Claude sem tela ── lê, confere, responde ── fecha
                                      ▲
-                              vigia (Agendador do Windows, a cada 3 min): mantém tudo de pé e te avisa se cair
+                              vigia (Agendador do Windows ou LaunchAgent do Mac, a cada 3 min): mantém tudo
+                              de pé e te avisa se cair
 ```
 
 - Em repouso, o consumo é quase zero: o Claude só abre quando chega mensagem do time.
@@ -50,7 +52,8 @@ WhatsApp ── app WhatsApp MCP ── detector (sem IA, a cada 30 s)
 
 ## Requisitos
 
-- **Windows** (Mac na próxima versão).
+- **Windows** (Windows PowerShell 5.1, que já vem no sistema) **ou macOS** com o **PowerShell 7.5+**:
+  `brew install powershell`. É o mesmo código nos dois: no Mac ele roda pelo `pwsh`.
 - [**Claude Code**](https://claude.com/claude-code) instalado e logado (VS Code, terminal ou T3 Code).
 - App [**WhatsApp MCP**](https://github.com/BrOrlandi/whatsapp-mcp-local), aberto e com o seu WhatsApp
   conectado.
@@ -58,11 +61,25 @@ WhatsApp ── app WhatsApp MCP ── detector (sem IA, a cada 30 s)
 
 ## Instalar
 
+No **Windows**:
+
 ```powershell
 git clone https://github.com/eltimrj/bovi-assistente.git
 cd bovi-assistente
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
+
+No **Mac**:
+
+```bash
+brew install powershell
+git clone https://github.com/eltimrj/bovi-assistente.git
+cd bovi-assistente
+pwsh ./install.ps1
+```
+
+No Mac, o instalador grava o vigia em `~/Library/LaunchAgents/local.assistente-wpp.vigia.plist` e os hooks do aviso
+de sessão chamando o `pwsh`. Os alertas do vigia aparecem como notificação do macOS.
 
 Depois, abra o Claude Code e diga:
 
@@ -81,6 +98,12 @@ ou "ajuda do assistente". No terminal, sem o Claude:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\.claude\skills\assistente-wpp\scripts\assistente.ps1" help
+```
+
+No Mac:
+
+```bash
+pwsh ~/.claude/skills/assistente-wpp/scripts/assistente.ps1 help
 ```
 
 Ele lista cada função por área (identidade, conexão, atendimento, funcionamento, aviso de sessão e
@@ -118,7 +141,8 @@ Desligar: `ASSISTENTE_AVISO_SESSAO=0` em `~/.assistente-wpp/assistente.env`.
 
 ```powershell
 git pull
-powershell -ExecutionPolicy Bypass -File .\install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1     # Windows
+pwsh ./install.ps1                                          # Mac
 ```
 
 A sua configuração, a equipe e a personalidade não são tocadas.
@@ -126,23 +150,26 @@ A sua configuração, a equipe e a personalidade não são tocadas.
 ## Desinstalar
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -Remover
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Remover     # Windows
+pwsh ./install.ps1 -Remover                                          # Mac
 ```
 
-Remove a skill, a tarefa do vigia e os hooks. A pasta `~/.assistente-wpp` fica; apague à mão se quiser.
+Remove a skill, o vigia (a tarefa agendada no Windows, o LaunchAgent no Mac) e os hooks. A pasta `~/.assistente-wpp` fica; apague à mão se quiser.
 
 ## Testes
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\assistente.tests.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\assistente.tests.ps1     # Windows
+pwsh -NoProfile -File ./tests/assistente.tests.ps1                                    # Mac
 ```
 
-Rodam contra um app WhatsApp falso, num diretório temporário, sem tocar na sua configuração.
+Rodam contra um app WhatsApp falso, num diretório temporário, sem tocar na sua configuração. No Mac, os testes do
+instalador gravam o LaunchAgent numa pasta temporária e não chamam o `launchctl`.
 
 ## Estrutura
 
 ```
-install.ps1                         instalador (skill, vigia, hooks)
+install.ps1                         instalador (skill, vigia, hooks), no Windows e no Mac
 skills/assistente-wpp/
   SKILL.md                          o que o Claude lê: onboarding, regras, personalidade, operação
   references/OBJETIVIDADE.md        o núcleo de toda mensagem (nenhuma personalidade muda)
@@ -152,6 +179,7 @@ skills/assistente-wpp/
   scripts/assistente-despachante.ps1  abre o Claude a cada lote de mensagens
   scripts/assistente-vigia.ps1      mantém o despachante de pé e avisa se cair
   scripts/aviso-sessao*.ps1         aviso de sessão terminada (hooks do Claude Code)
+  scripts/plataforma.ps1            o que muda entre Windows e Mac (processos, notificação, LaunchAgent)
 exemplos/equipe.exemplo.json        formato da lista do time (números fictícios)
 tests/                              testes com app WhatsApp falso
 ```
