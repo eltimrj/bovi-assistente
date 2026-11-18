@@ -219,7 +219,8 @@ Se a sessão tiver Remote Control ligado, vai também o link do celular (`claude
 - **T3 Code:** ele roda o Claude pelo Agent SDK. O aviso só sai se o T3 carregar as configurações do usuário (os
   hooks ficam em `~/.claude/settings.json`). Ainda não foi testado com o T3. Se não chegar, diga isso ao dono.
 - **Celular:** mensagem na conversa consigo mesmo nem sempre toca no celular. Para tocar, o dono pode apontar
-  `ASSISTENTE_AVISO_JID` para outro número dele.
+  `ASSISTENTE_AVISO_JID` para outro número dele. O app WhatsApp MCP v1.5.0 recusa enviar para a própria conta, e
+  aí esse outro número é obrigatório. O que chega desse número, na conversa de avisos, vira `EVENT dono`.
 
 ### Modo despachado
 

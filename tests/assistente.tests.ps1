@@ -318,6 +318,20 @@ try {
         $w = Run @('watch', '-Once')
         Check 'detector: mensagem com o prefixo do assistente não é tomada como do dono' (($w.Out -notmatch 'EVENT dono') -and ($w.Out -notmatch 'EVENT assumido')) $w.Out
 
+        # Avisos noutro número do dono (o app não envia para a própria conta): o que chega de lá também é pedido dele.
+        $otherJid = '5500900000200@s.whatsapp.net'
+        $chatsO = '{"chats":[{"jid":"' + $otherJid + '","last_message_ts":"' + (IsoAgo 0) + '"}]}'
+        function Set-CursorO { [IO.File]::WriteAllText((Join-Path $tmp 'state\wpp-cursor.json'), (@{ updated_at = (IsoAgo 60); chats = @{ $otherJid = (IsoAgo 60) } } | ConvertTo-Json), $utf8) }
+        Set-Responses @{ whatsapp_status = $status; list_chats = @{ text = $chatsO }; get_chat_messages = @{ text = (Msg $false 'OUTRO-1' 'oi Jarvis') } }
+        Set-CursorO
+        $env:ASSISTENTE_AVISO_JID = $otherJid
+        $w = Run @('watch', '-Once')
+        $env:ASSISTENTE_AVISO_JID = $null
+        Check 'detector: avisos noutro número do dono -> o que chega de lá vira EVENT dono' ($w.Out -match ('EVENT dono chat=' + [regex]::Escape($otherJid))) $w.Out
+        Set-CursorO
+        $w = Run @('watch', '-Once')
+        Check 'detector: o mesmo número sem ser o de avisos é estranho e nem vira evento' ($w.Out -notmatch 'EVENT') $w.Out
+
         Set-Responses @{ whatsapp_status = @{ text = '{"wacli":{"linked_jid":"5500000000000@s.whatsapp.net"}}' }; list_chats = @{ text = $chats } }
         $w = Run @('watch', '-Once')
         Check 'detector: outra conta no app -> ERRO e nada é lido' (($w.Out -match 'ERRO a conta conectada') -and ($w.Out -notmatch 'EVENT')) $w.Out

@@ -471,7 +471,10 @@ function Invoke-WatchCycle($St) {
                 # Mensagem com o prefixo do assistente é dele mesmo antes do send registrar o id (corrida detector x send).
                 $foreign = @($newer | Where-Object { $_.from_me -and -not (Test-OurMessage $_.id) -and -not ([string]$_.text).StartsWith($prefix) })
                 if ($isNotify) {
-                    if ($foreign.Count -gt 0) { Write-Output ("EVENT dono chat={0} n={1} last={2}" -f $ch.jid, $foreign.Count, $ch.last_message_ts) }
+                    # Avisos noutro número do dono (ASSISTENTE_AVISO_JID diferente da conta): o que chega de lá também é dele.
+                    $fromOwner = @($foreign)
+                    if ((Get-PhoneKey $NotifyJid) -ne (Get-PhoneKey $AccountJid)) { $fromOwner += @($inbound) }
+                    if ($fromOwner.Count -gt 0) { Write-Output ("EVENT dono chat={0} n={1} last={2}" -f $ch.jid, $fromOwner.Count, $ch.last_message_ts) }
                 }
                 else {
                     $nm = ([string]$who.name) -replace '"', ''
