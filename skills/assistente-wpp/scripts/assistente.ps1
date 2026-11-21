@@ -369,6 +369,18 @@ function Invoke-Mcp([string]$Tool, [hashtable]$Arguments) {
     $j.result.content[0].text | ConvertFrom-Json
 }
 
+# Grupo com endereçamento por LID: a marcação só funciona com o LID da pessoa (o WhatsApp ignora o número).
+# O mapa número → LID vem da sessão local do app (somente leitura; ASSISTENTE_WACLI_SESSAO troca o caminho).
+# Sem a sessão, sem sqlite3 ou sem o número no mapa, devolve vazio e a marcação segue pelo número.
+function Get-LidForPhone([string]$Phone) {
+    $db = Get-Cfg 'ASSISTENTE_WACLI_SESSAO' (Join-Path $HOME '.wacli/session.db')
+    if (-not (Test-Path -LiteralPath $db) -or -not (Get-Command sqlite3 -ErrorAction SilentlyContinue)) { return '' }
+    if ($Phone -notmatch '^\d{10,15}$') { return '' }
+    $lid = & sqlite3 -readonly $db "select lid from whatsmeow_lid_map where pn = '$Phone' limit 1;" 2>$null
+    if ($LASTEXITCODE -eq 0 -and "$lid" -match '^\d+$') { return "$lid" }
+    return ''
+}
+
 # ---------- saúde e retornos prometidos ----------
 
 function Write-Heartbeat([bool]$GatewayOk, [string]$LastError = '', [int]$FailedChats = 0, [bool]$Paused = $false) {
@@ -471,7 +483,10 @@ function Invoke-WatchCycle($St) {
                 # Mensagem com o prefixo do assistente é dele mesmo antes do send registrar o id (corrida detector x send).
                 $foreign = @($newer | Where-Object { $_.from_me -and -not (Test-OurMessage $_.id) -and -not ([string]$_.text).StartsWith($prefix) })
                 if ($isNotify) {
-                    if ($foreign.Count -gt 0) { Write-Output ("EVENT dono chat={0} n={1} last={2}" -f $ch.jid, $foreign.Count, $ch.last_message_ts) }
+                    # Avisos noutro número do dono (ASSISTENTE_AVISO_JID diferente da conta): o que chega de lá também é dele.
+                    $fromOwner = @($foreign)
+                    if ((Get-PhoneKey $NotifyJid) -ne (Get-PhoneKey $AccountJid)) { $fromOwner += @($inbound) }
+                    if ($fromOwner.Count -gt 0) { Write-Output ("EVENT dono chat={0} n={1} last={2}" -f $ch.jid, $fromOwner.Count, $ch.last_message_ts) }
                 }
                 else {
                     $nm = ([string]$who.name) -replace '"', ''
@@ -509,6 +524,68 @@ function Invoke-WatchCycle($St) {
     Write-Heartbeat ($listOk -and $failedChats -eq 0) $lastErr $failedChats
 }
 
+# Webhook do app (opcional): com ASSISTENTE_WEBHOOK_PORTA e ASSISTENTE_WEBHOOK_SEGREDO, o app WhatsApp MCP avisa cada
+# mensagem nova num POST em 127.0.0.1 e o detector confere na hora, sem esperar o intervalo. A consulta periódica
+# continua de reserva (aviso perdido, app reiniciado). Só aceita aviso com a assinatura HMAC-SHA256 certa.
+function Open-WebhookListener {
+    $port = 0; [void][int]::TryParse([string](Get-Cfg 'ASSISTENTE_WEBHOOK_PORTA' '0'), [ref]$port)
+    $secret = Get-Cfg 'ASSISTENTE_WEBHOOK_SEGREDO'
+    if ($port -le 0 -or -not $secret) { return $null }
+    try {
+        $l = New-Object Net.Sockets.TcpListener ([Net.IPAddress]::Loopback, $port)
+        $l.Start()
+        return @{ listener = $l; secret = $secret; port = $port }
+    }
+    catch { Write-Output ("AVISO webhook: não consegui escutar em 127.0.0.1:{0} ({1}); sigo só na consulta periódica" -f $port, $_.Exception.Message); return $null }
+}
+function Receive-Webhook($Hook) {
+    # Atende uma conexão: responde 204 (aviso válido) ou 401, em menos de 3 s. Devolve $true se for mensagem nova.
+    $client = $Hook.listener.AcceptTcpClient()
+    $isMessage = $false
+    try {
+        $client.ReceiveTimeout = 2000
+        $s = $client.GetStream()
+        $head = New-Object Collections.Generic.List[byte]
+        while ($true) {
+            $b = $s.ReadByte(); if ($b -lt 0) { break }
+            $head.Add([byte]$b); $n = $head.Count
+            if ($n -ge 4 -and $head[$n - 4] -eq 13 -and $head[$n - 3] -eq 10 -and $head[$n - 2] -eq 13 -and $head[$n - 1] -eq 10) { break }
+            if ($n -gt 65536) { break }
+        }
+        $hdrText = $Utf8.GetString($head.ToArray())
+        $len = 0; if ($hdrText -match '(?im)^Content-Length:\s*(\d+)') { $len = [Math]::Min([int]$Matches[1], 4MB) }
+        $body = New-Object byte[] $len; $read = 0
+        while ($read -lt $len) { $k = $s.Read($body, $read, $len - $read); if ($k -le 0) { break }; $read += $k }
+        $sig = if ($hdrText -match '(?im)^X-WhatsApp-MCP-Signature:\s*(\S+)') { $Matches[1].Trim() } else { '' }
+        $event = if ($hdrText -match '(?im)^X-WhatsApp-MCP-Event:\s*(\S+)') { $Matches[1].Trim() } else { '' }
+        $h = New-Object Security.Cryptography.HMACSHA256 (, $Utf8.GetBytes($Hook.secret))
+        $expected = 'sha256=' + (($h.ComputeHash($body, 0, $read) | ForEach-Object { $_.ToString('x2') }) -join '')
+        $ok = ($read -eq $len) -and ($sig.Length -eq $expected.Length) -and ($sig.ToLowerInvariant() -eq $expected)
+        $status = if ($ok) { '204 No Content' } else { '401 Unauthorized' }
+        $resp = $Utf8.GetBytes("HTTP/1.1 $status`r`nContent-Length: 0`r`nConnection: close`r`n`r`n")
+        $s.Write($resp, 0, $resp.Length); $s.Flush()
+        $isMessage = $ok -and ($event -eq 'message')
+    }
+    catch { }
+    finally { $client.Close() }
+    $isMessage
+}
+function Wait-NextCycle($Hook, [int]$Seconds) {
+    if (-not $Hook) { Start-Sleep -Seconds $Seconds; return }
+    $end = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Date) -lt $end) {
+        $hit = $false
+        while ($Hook.listener.Pending()) { if (Receive-Webhook $Hook) { $hit = $true } }
+        if ($hit) {
+            # Junta avisos em rajada (várias mensagens seguidas) num ciclo só.
+            Start-Sleep -Milliseconds 400
+            while ($Hook.listener.Pending()) { $null = Receive-Webhook $Hook }
+            return
+        }
+        Start-Sleep -Milliseconds 200
+    }
+}
+
 function Start-Watch {
     $why = ''
     if (-not $AssistantName -or (Test-AssistantName $AssistantName)) { $why = 'sem ASSISTENTE_NOME válido' }
@@ -517,6 +594,8 @@ function Start-Watch {
     if ($why) { Write-Output "ERRO detector não sobe: $why"; Write-Heartbeat $false $why; return }
     # Conta conectada: conferida antes de ler. App fechado ou outra conta = espera, com o batimento acusando a falha.
     $st = @{ failing = $false; chatErrs = @{} }
+    $hook = if ($Once) { $null } else { Open-WebhookListener }
+    if ($hook) { Write-Output ("WEBHOOK escutando em 127.0.0.1:{0}" -f $hook.port) }
     $acctOk = $false; $acctErr = ''
     while ($true) {
         if (-not $acctOk) {
@@ -534,7 +613,7 @@ function Start-Watch {
         }
         Invoke-WatchCycle $st
         if ($Once) { break }
-        Start-Sleep -Seconds $IntervalSeconds
+        Wait-NextCycle $hook $IntervalSeconds
     }
 }
 
@@ -898,7 +977,20 @@ try {
             if (-not $known) { try { $known = @((Invoke-Mcp 'get_chat_messages' @{ chat_jid = $Chat; limit = 1 }).messages).Count -gt 0 } catch { $known = $false } }
             if (-not $known -and -not $NewContactConfirmed) { Refuse 'primeiro_contato_sem_confirmacao' 'rode resolve -Name, mostre os candidatos ao dono e use -NewContactConfirmed só depois que ele confirmar este número' }
             if ($DryRun) { Out-Json ([ordered]@{ sent = $false; dry_run = $true; chat = $Chat; text = $msg }); exit 0 }
-            $r = Invoke-Mcp 'send_text_message' @{ to = $Chat; text = $msg }
+            # Marcação: cada @<número com DDI> no texto vai também em mentions, para o WhatsApp mostrar o nome e notificar.
+            # Em grupo, o @número vira @LID no texto e <lid>@lid em mentions; sem LID conhecido, fica o número.
+            $phones = @([regex]::Matches($msg, '(?<![\w@])@(\d{10,15})\b') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+            $mentions = @()
+            foreach ($p in $phones) {
+                $lid = if ($Chat -like '*@g.us') { Get-LidForPhone $p } else { '' }
+                if ($lid) {
+                    $msg = [regex]::Replace($msg, "(?<![\w@])@$p\b", "@$lid")
+                    $mentions += "$lid@lid"
+                } else { $mentions += $p }
+            }
+            $sendArgs = @{ to = $Chat; text = $msg }
+            if ($mentions.Count -gt 0) { $sendArgs['mentions'] = $mentions }
+            $r = Invoke-Mcp 'send_text_message' $sendArgs
             if ($r.message_id) { Add-SentLine $Chat $r.message_id }
             Out-Json ([ordered]@{ sent = [bool]$r.sent; message_id = $r.message_id; note = $r.note }); exit 0
         }

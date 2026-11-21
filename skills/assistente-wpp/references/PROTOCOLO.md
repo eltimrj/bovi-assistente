@@ -40,7 +40,7 @@ Telefone nunca entra em repositório.
 | `EVENT grupo chat=… nome="…" responder=nao\|sim` | mensagem num grupo do time | §5 |
 | `EVENT assumido chat=… quem="…"` | o dono escreveu do celular nessa conversa | já está em espera; **não responda** |
 | `EVENT espera equipe chat=… dono_ultima=<hora>` | alguém escreveu numa conversa em espera | silêncio (§6) |
-| `EVENT dono chat=…` | o dono escreveu na conversa consigo mesmo | é pedido dele: leia e atenda dentro destas regras. "ajuda", "help" ou "/help": rode `help` e responda ali uma versão curta (um item por linha, só funcionalidade e estado) |
+| `EVENT dono chat=…` | o dono escreveu na conversa de avisos (consigo mesmo, ou do outro número dele quando `ASSISTENTE_AVISO_JID` aponta para lá) | é pedido dele: leia e atenda dentro destas regras. "ajuda", "help" ou "/help": rode `help` e responda ali uma versão curta (um item por linha, só funcionalidade e estado) |
 | `ERRO …` / `RECOVERED` | app caiu / voltou | reconciliar: conferir o que chegou no intervalo |
 
 ## 4. Atender alguém do time
@@ -71,6 +71,11 @@ nunca apresenta decisão que não foi tomada.
 - O que vale vai ao dono (§7) em uma ou duas linhas: quem, o quê, o que ele precisa fazer. Assuntos em sequência vão
   juntos.
 - Responder no grupo só com `responder=sim`, dentro do que o dono autorizou.
+- Ao responder alguém no grupo, marque a pessoa: `@<número com DDI>` no texto (o número vem do `equipe.json` ou do
+  remetente da mensagem). O `send` reconhece o `@` e manda a marcação ao WhatsApp, que mostra o nome e notifica.
+  Grupo que endereça por LID só marca pelo LID: em grupo, o `send` troca sozinho o `@número` pelo `@LID` da pessoa,
+  lido da sessão local do app (`~/.wacli/session.db`, só leitura; precisa do `sqlite3`). Sem o LID, fica o número.
+  Mensagem já enviada não se edita para marcar.
 
 ## 6. Conversa em espera (o dono assumiu)
 

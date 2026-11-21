@@ -154,7 +154,8 @@ cortesia. Nada aqui envia mensagem a ninguém do time.
 ```
 
 O `send` confere pausa, volante, quem é o destinatário, espera, modo e conta conectada, põe o prefixo e registra o
-envio. Recusas (rc 2, campo `reason`):
+envio. Para marcar alguém (em grupo, ao responder a pessoa), escreva `@<número com DDI>` no texto: o `send` manda a
+marcação junto, e o WhatsApp mostra o nome. Recusas (rc 2, campo `reason`):
 
 | `reason` | O que fazer |
 |---|---|
@@ -183,6 +184,10 @@ Vale para toda mensagem que o assistente inicia a alguém citado por nome.
 - **Despachante** (`$D`): laço leve que roda o detector e abre `claude -p` (sem tela) a cada lote de mensagens;
   segura o volante e confere os retornos prometidos a cada minuto. `-Mode status | start | stop`.
   Log em `~/.assistente-wpp/state/despachante.log` (só o resumo de cada lote, sem conversa).
+- **Mais rápido:** com `ASSISTENTE_WEBHOOK_PORTA` e `ASSISTENTE_WEBHOOK_SEGREDO` no `.env` (e o webhook cadastrado no
+  app em Configurações › Webhooks, apontando para `http://127.0.0.1:<porta>/`), o detector lê na hora em que a
+  mensagem chega; a consulta a cada 30 s fica de reserva. `ASSISTENTE_CLAUDE_ARGS=--model sonnet` deixa cada lote
+  mais rápido e consome menos do plano.
 - **Vigia** (`scripts/assistente-vigia.ps1`, a cada 3 min: tarefa agendada `AssistenteWppVigia` no Windows, LaunchAgent
   `local.assistente-wpp.vigia` no Mac): sobe o despachante
   se ele cair e avisa o dono (WhatsApp + notificação do sistema) se o detector parar ou não ler o WhatsApp.
@@ -218,7 +223,8 @@ Se a sessão tiver Remote Control ligado, vai também o link do celular (`claude
 - **T3 Code:** ele roda o Claude pelo Agent SDK. O aviso só sai se o T3 carregar as configurações do usuário (os
   hooks ficam em `~/.claude/settings.json`). Ainda não foi testado com o T3. Se não chegar, diga isso ao dono.
 - **Celular:** mensagem na conversa consigo mesmo nem sempre toca no celular. Para tocar, o dono pode apontar
-  `ASSISTENTE_AVISO_JID` para outro número dele.
+  `ASSISTENTE_AVISO_JID` para outro número dele. O app WhatsApp MCP v1.5.0 recusa enviar para a própria conta, e
+  aí esse outro número é obrigatório. O que chega desse número, na conversa de avisos, vira `EVENT dono`.
 
 ### Modo despachado
 
