@@ -73,6 +73,8 @@ nunca apresenta decisão que não foi tomada.
 - Responder no grupo só com `responder=sim`, dentro do que o dono autorizou.
 - Ao responder alguém no grupo, marque a pessoa: `@<número com DDI>` no texto (o número vem do `equipe.json` ou do
   remetente da mensagem). O `send` reconhece o `@` e manda a marcação ao WhatsApp, que mostra o nome e notifica.
+  Grupo que endereça por LID só marca pelo LID: em grupo, o `send` troca sozinho o `@número` pelo `@LID` da pessoa,
+  lido da sessão local do app (`~/.wacli/session.db`, só leitura; precisa do `sqlite3`). Sem o LID, fica o número.
   Mensagem já enviada não se edita para marcar.
 
 ## 6. Conversa em espera (o dono assumiu)

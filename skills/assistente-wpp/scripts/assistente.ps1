@@ -369,6 +369,18 @@ function Invoke-Mcp([string]$Tool, [hashtable]$Arguments) {
     $j.result.content[0].text | ConvertFrom-Json
 }
 
+# Grupo com endereçamento por LID: a marcação só funciona com o LID da pessoa (o WhatsApp ignora o número).
+# O mapa número → LID vem da sessão local do app (somente leitura; ASSISTENTE_WACLI_SESSAO troca o caminho).
+# Sem a sessão, sem sqlite3 ou sem o número no mapa, devolve vazio e a marcação segue pelo número.
+function Get-LidForPhone([string]$Phone) {
+    $db = Get-Cfg 'ASSISTENTE_WACLI_SESSAO' (Join-Path $HOME '.wacli/session.db')
+    if (-not (Test-Path -LiteralPath $db) -or -not (Get-Command sqlite3 -ErrorAction SilentlyContinue)) { return '' }
+    if ($Phone -notmatch '^\d{10,15}$') { return '' }
+    $lid = & sqlite3 -readonly $db "select lid from whatsmeow_lid_map where pn = '$Phone' limit 1;" 2>$null
+    if ($LASTEXITCODE -eq 0 -and "$lid" -match '^\d+$') { return "$lid" }
+    return ''
+}
+
 # ---------- saúde e retornos prometidos ----------
 
 function Write-Heartbeat([bool]$GatewayOk, [string]$LastError = '', [int]$FailedChats = 0, [bool]$Paused = $false) {
@@ -966,8 +978,17 @@ try {
             if (-not $known -and -not $NewContactConfirmed) { Refuse 'primeiro_contato_sem_confirmacao' 'rode resolve -Name, mostre os candidatos ao dono e use -NewContactConfirmed só depois que ele confirmar este número' }
             if ($DryRun) { Out-Json ([ordered]@{ sent = $false; dry_run = $true; chat = $Chat; text = $msg }); exit 0 }
             # Marcação: cada @<número com DDI> no texto vai também em mentions, para o WhatsApp mostrar o nome e notificar.
+            # Em grupo, o @número vira @LID no texto e <lid>@lid em mentions; sem LID conhecido, fica o número.
+            $phones = @([regex]::Matches($msg, '(?<![\w@])@(\d{10,15})\b') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+            $mentions = @()
+            foreach ($p in $phones) {
+                $lid = if ($Chat -like '*@g.us') { Get-LidForPhone $p } else { '' }
+                if ($lid) {
+                    $msg = [regex]::Replace($msg, "(?<![\w@])@$p\b", "@$lid")
+                    $mentions += "$lid@lid"
+                } else { $mentions += $p }
+            }
             $sendArgs = @{ to = $Chat; text = $msg }
-            $mentions = @([regex]::Matches($msg, '(?<![\w@])@(\d{10,15})\b') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
             if ($mentions.Count -gt 0) { $sendArgs['mentions'] = $mentions }
             $r = Invoke-Mcp 'send_text_message' $sendArgs
             if ($r.message_id) { Add-SentLine $Chat $r.message_id }

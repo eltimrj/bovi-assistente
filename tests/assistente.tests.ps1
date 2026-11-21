@@ -14,7 +14,7 @@ New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $utf8 = New-Object Text.UTF8Encoding $false
 
 # Isolamento: nada lê a configuração real, nada alcança o app real (porta 9 fechada), nada sobe o despachante.
-$keys = 'ASSISTENTE_HOME', 'ASSISTENTE_CONFIG_FILE', 'ASSISTENTE_WEBHOOK_PORTA', 'ASSISTENTE_WEBHOOK_SEGREDO', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_STATE_DIR', 'ASSISTENTE_MCP_URL', 'ASSISTENTE_NOME', 'ASSISTENTE_DONO', 'ASSISTENTE_CONTA_JID', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_AUTONOMIA', 'ASSISTENTE_DESPACHANTE', 'ASSISTENTE_SEM_TOAST', 'ASSISTENTE_EQUIPE', 'ASSISTENTE_PERSONA', 'ASSISTENTE_AVISO_SESSAO', 'ASSISTENTE_AVISO_LINK', 'ASSISTENTE_DESPACHADO', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_ENTRYPOINT'
+$keys = 'ASSISTENTE_HOME', 'ASSISTENTE_CONFIG_FILE', 'ASSISTENTE_WACLI_SESSAO', 'ASSISTENTE_WEBHOOK_PORTA', 'ASSISTENTE_WEBHOOK_SEGREDO', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_STATE_DIR', 'ASSISTENTE_MCP_URL', 'ASSISTENTE_NOME', 'ASSISTENTE_DONO', 'ASSISTENTE_CONTA_JID', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_AUTONOMIA', 'ASSISTENTE_DESPACHANTE', 'ASSISTENTE_SEM_TOAST', 'ASSISTENTE_EQUIPE', 'ASSISTENTE_PERSONA', 'ASSISTENTE_AVISO_SESSAO', 'ASSISTENTE_AVISO_LINK', 'ASSISTENTE_DESPACHADO', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_ENTRYPOINT'
 $saved = @{}; foreach ($k in $keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $null) }
 $env:ASSISTENTE_HOME = $tmp
 $env:ASSISTENTE_CONFIG_FILE = Join-Path $tmp 'assistente.env'
@@ -379,6 +379,22 @@ try {
         $s = Run @('send', '-Chat', $memberJid, '-Text', 'Oi, @5500912340001! Vê com @5500912349999 e @5500912340001; dev@5500900000000 não é marcação.', '-Operator', 'claude', '-Token', $tk)
         $sent = @(Get-Requests | Where-Object { $_.tool -eq 'send_text_message' })[-1]
         Check 'send: @número no texto vira marcação (sem repetir, sem pegar e-mail)' ((((J $s).sent) -eq $true) -and ((@($sent.arguments.mentions) -join ',') -eq '5500912340001,5500912349999')) ($sent | ConvertTo-Json -Compress -Depth 5)
+        # Grupo com endereçamento por LID: o @número vira @LID no texto e <lid>@lid na marcação; sem LID no mapa, fica o número.
+        if (Get-Command sqlite3 -ErrorAction SilentlyContinue) {
+            $sessao = Join-Path $tmp 'session.db'
+            & sqlite3 $sessao "create table whatsmeow_lid_map (lid text primary key, pn text unique not null); insert into whatsmeow_lid_map values ('123456789012345','5500912340001');"
+            $env:ASSISTENTE_WACLI_SESSAO = $sessao
+            $null = Run @('allow', 'add', '-Chat', $groupJid)
+            $s = Run @('send', '-Chat', $groupJid, '-Text', 'Oi, @5500912340001! Vê com @5500912349999.', '-Operator', 'claude', '-Token', $tk, '-NewContactConfirmed')
+            $sent = @(Get-Requests | Where-Object { $_.tool -eq 'send_text_message' })[-1]
+            Check 'send: em grupo, @número com LID conhecido vira @LID e marca <lid>@lid; sem LID, fica o número' ((((J $s).sent) -eq $true) -and ($sent.arguments.text -eq '*Jarvis:* Oi, @123456789012345! Vê com @5500912349999.') -and ((@($sent.arguments.mentions) -join ',') -eq '123456789012345@lid,5500912349999')) ($sent | ConvertTo-Json -Compress -Depth 5)
+            $s = Run @('send', '-Chat', $memberJid, '-Text', 'Oi, @5500912340001!', '-Operator', 'claude', '-Token', $tk)
+            $sent = @(Get-Requests | Where-Object { $_.tool -eq 'send_text_message' })[-1]
+            Check 'send: em conversa privada, a marcação segue pelo número' ((@($sent.arguments.mentions) -join ',') -eq '5500912340001') ($sent | ConvertTo-Json -Compress -Depth 5)
+            $null = Run @('allow', 'remove', '-Chat', $groupJid)
+            Remove-Item Env:ASSISTENTE_WACLI_SESSAO -ErrorAction SilentlyContinue
+        }
+        else { Write-Output 'pulo  marcação por LID (sem sqlite3)' }
         Check 'intro: quem já recebeu mensagem não é reapresentado' (((J (Run @('intro-needed', '-Chat', $memberJid))).intro_needed) -eq $false)
 
         # Manual (help): estado real de cada funcionalidade
