@@ -1090,7 +1090,15 @@ try {
                 $file = Join-Path (Join-Path $StateDir 'voz') ('fala-{0:yyyyMMddHHmmssfff}-{1}.ogg' -f [DateTime]::UtcNow, $PID)
                 $v = New-Voz $spoken $file
                 if (-not $v.ok) { $v['sent'] = $false; $v['voice'] = $true; Out-Json $v; exit 2 }
-                try { $r = Invoke-Mcp 'send_media_message' @{ to = $Chat; type = 'audio'; url = $file } }
+                # voice_note: chega como áudio gravado (onda e player de voz), não como arquivo. App sem a opção a ignora
+                # (sai como arquivo); se ele recusar o parâmetro ou o formato, manda de novo sem ela.
+                try {
+                    try { $r = Invoke-Mcp 'send_media_message' @{ to = $Chat; type = 'audio'; url = $file; voice_note = $true } }
+                    catch {
+                        if ("$($_.Exception.Message)" -notmatch '(?i)voice.?note|unknown|unexpected|additional|invalid param|schema') { throw }
+                        $r = Invoke-Mcp 'send_media_message' @{ to = $Chat; type = 'audio'; url = $file }
+                    }
+                }
                 finally { Remove-Item -LiteralPath $file -ErrorAction SilentlyContinue }   # o áudio não fica guardado
                 if ($r.message_id) { Add-SentLine $Chat $r.message_id }
                 Out-Json ([ordered]@{ sent = [bool]$r.message_id; voice = $true; message_id = $r.message_id; chars = $v.chars; note = $r.note }); exit 0

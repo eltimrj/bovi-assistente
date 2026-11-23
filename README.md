@@ -152,7 +152,9 @@ voz escolhida ficam só no seu `~/.assistente-wpp/assistente.env`; nada disso va
   uma amostra sem enviar nada.
 - **Ajuste fino** (estabilidade, estilo, velocidade e tom) no `.env`. Um ponto de partida natural: `0.30 / 0.80 /
   0.45 / 1.08`.
-- O áudio chega como **arquivo de áudio**, não como nota de voz: o app WhatsApp MCP ainda não manda nota de voz.
+- O assistente pede para o áudio ir como **nota de voz**, mas o app WhatsApp MCP ainda não tem essa opção numa versão
+  publicada (ela foi proposta ao projeto): até lá, o áudio chega como **arquivo de áudio**. Quando a versão sair, é só
+  atualizar o app.
 
 ## Atualizar
 

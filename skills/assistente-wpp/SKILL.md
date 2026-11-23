@@ -206,8 +206,9 @@ O atalho **`/voz`** (skill `voz`, instalada junto) conduz o dono pelos passos ab
   `*<Nome>:*`.
 - **Falhou** (`voz_sem_chave`, `voz_sem_credito`, `voz_limite`, `voz_nao_encontrada`, `voz_falhou`…): responda em
   texto, sem comentar a falha com a pessoa. Chave recusada ou sem crédito: uma linha ao dono.
-- O arquivo de áudio é apagado depois do envio. Chega como **arquivo de áudio**, não como nota de voz: o app WhatsApp
-  MCP ainda não manda nota de voz.
+- O arquivo de áudio é apagado depois do envio. O `send -Voice` pede ao app que mande como **nota de voz** (o áudio
+  gravado, com a bolinha do microfone). O app WhatsApp MCP ainda não tem essa opção numa versão publicada (ela foi
+  proposta ao projeto): até lá, ele ignora o pedido e o áudio chega como **arquivo de áudio**.
 
 ## 6. Destinatário certo
 
