@@ -3,6 +3,9 @@
 #   Windows: powershell -NoProfile -ExecutionPolicy Bypass -File tests\assistente.tests.ps1
 #   macOS:   pwsh -NoProfile -File tests/assistente.tests.ps1
 $ErrorActionPreference = 'Stop'
+# Os scripts escrevem em UTF-8; sem isto o PowerShell lê a saída deles na página de código do console e os acentos
+# chegam trocados às comparações.
+[Console]::OutputEncoding = New-Object Text.UTF8Encoding $false
 $repo = Split-Path $PSScriptRoot -Parent
 $scripts = Join-Path $repo 'skills\assistente-wpp\scripts'
 . (Join-Path $scripts 'plataforma.ps1')
@@ -14,7 +17,7 @@ New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $utf8 = New-Object Text.UTF8Encoding $false
 
 # Isolamento: nada lê a configuração real, nada alcança o app real (porta 9 fechada), nada sobe o despachante.
-$keys = 'ASSISTENTE_HOME', 'ASSISTENTE_CONFIG_FILE', 'ASSISTENTE_WACLI_SESSAO', 'ASSISTENTE_WEBHOOK_PORTA', 'ASSISTENTE_WEBHOOK_SEGREDO', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_STATE_DIR', 'ASSISTENTE_MCP_URL', 'ASSISTENTE_NOME', 'ASSISTENTE_DONO', 'ASSISTENTE_CONTA_JID', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_AUTONOMIA', 'ASSISTENTE_DESPACHANTE', 'ASSISTENTE_SEM_TOAST', 'ASSISTENTE_EQUIPE', 'ASSISTENTE_PERSONA', 'ASSISTENTE_AVISO_SESSAO', 'ASSISTENTE_AVISO_LINK', 'ASSISTENTE_DESPACHADO', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_ENTRYPOINT'
+$keys = 'ASSISTENTE_HOME', 'ASSISTENTE_CONFIG_FILE', 'ASSISTENTE_WACLI_SESSAO', 'ASSISTENTE_WEBHOOK_PORTA', 'ASSISTENTE_WEBHOOK_SEGREDO', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_STATE_DIR', 'ASSISTENTE_MCP_URL', 'ASSISTENTE_NOME', 'ASSISTENTE_DONO', 'ASSISTENTE_CONTA_JID', 'ASSISTENTE_AVISO_JID', 'ASSISTENTE_AUTONOMIA', 'ASSISTENTE_DESPACHANTE', 'ASSISTENTE_SEM_TOAST', 'ASSISTENTE_EQUIPE', 'ASSISTENTE_PERSONA', 'ASSISTENTE_AVISO_SESSAO', 'ASSISTENTE_AVISO_LINK', 'ASSISTENTE_DESPACHADO', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_ENTRYPOINT', 'ELEVENLABS_API_KEY', 'ASSISTENTE_VOZ', 'ASSISTENTE_VOZ_ID', 'ASSISTENTE_VOZ_MAX', 'ASSISTENTE_VOZ_MODELO', 'ASSISTENTE_VOZ_TOM', 'ASSISTENTE_GENERO'
 $saved = @{}; foreach ($k in $keys) { $saved[$k] = [Environment]::GetEnvironmentVariable($k); [Environment]::SetEnvironmentVariable($k, $null) }
 $env:ASSISTENTE_HOME = $tmp
 $env:ASSISTENTE_CONFIG_FILE = Join-Path $tmp 'assistente.env'
@@ -151,6 +154,27 @@ try {
     Check 'help: com o app fechado, mostra a conexão inativa e não quebra' (($ho -match 'Manual de Jarvis') -and ($ho -match '\[inativo\] App WhatsApp MCP')) $ho
     Check 'help: fuso padrão GMT-3, o mesmo do time' ($ho -match '\[ativo\]\s+Fuso dos horários: GMT-3, o mesmo do time') $ho
     Check 'help: gênero opcional, neutro sem escolha' ($ho -match '\[inativo\] Gênero do assistente \(opcional\): não definido: formas neutras') $ho
+    Check 'help: sem chave da ElevenLabs, a voz aparece inativa' ($ho -match '\[inativo\] Voz \([^)]*\): sem chave da ElevenLabs') $ho
+
+    # --- voz: tudo opcional e local; recusas antes de qualquer rede ---
+    $r = Run @('tts', '-Text', 'Oi, tudo bem?')
+    Check 'voz: sem ELEVENLABS_API_KEY o tts recusa (rc 2)' (($r.Rc -eq 2) -and ((Reason $r) -eq 'voz_sem_chave')) $r.Out
+    Check 'voz: vozes sem chave recusa' ((Reason (Run @('vozes'))) -eq 'voz_sem_chave')
+    Check 'voz: sem escolha e sem genero, a padrao e a brasileira neutra' (((J (Run @('config'))).ASSISTENTE_VOZ_ID_efetivo) -eq 'KHmfNHtEjHhLK9eER20w')
+    $env:ASSISTENTE_GENERO = 'feminino'
+    Check 'voz: assistente feminino sem escolha usa a brasileira feminina' (((J (Run @('config'))).ASSISTENTE_VOZ_ID_efetivo) -eq 'RGymW84CSmfVugnA5tvA')
+    $env:ASSISTENTE_GENERO = $null
+    $env:ELEVENLABS_API_KEY = 'chave-de-teste'
+    $env:ASSISTENTE_VOZ = '0'
+    Check 'voz: ASSISTENTE_VOZ=0 desliga' ((Reason (Run @('tts', '-Text', 'Oi.'))) -eq 'voz_desligada')
+    $env:ASSISTENTE_VOZ = $null; $env:ASSISTENTE_VOZ_MAX = '10'
+    Check 'voz: fala acima do limite recusa sem chamar a ElevenLabs' ((Reason (Run @('tts', '-Text', 'Uma fala bem maior que dez letras.'))) -eq 'voz_longa_demais')
+    $env:ASSISTENTE_VOZ_MAX = $null
+    Check 'voz: config mascara a chave' (((J (Run @('config'))).ELEVENLABS_API_KEY) -eq '(definida)')
+    $env:ELEVENLABS_API_KEY = $null
+    $r = Run @('setup', '-VozId', 'https://elevenlabs.io/app/voice-library?voiceId=AbCdEfGhIjKlMnOpQrSt')
+    Check 'voz: setup aceita o link da voz e grava o id' ((((J $r).values).ASSISTENTE_VOZ_ID -eq 'AbCdEfGhIjKlMnOpQrSt') -and (((J (Run @('config'))).ASSISTENTE_VOZ_ID_efetivo) -eq 'AbCdEfGhIjKlMnOpQrSt')) $r.Out
+    Check 'voz: setup recusa o que nao e voz' ((Reason (Run @('setup', '-VozId', 'https://exemplo.com/x'))) -eq 'voz_invalida')
     Check 'help: explica onde roda e como desativar' (($ho -match '\[ativo\]\s+(Windows: onde roda: neste PC|macOS: onde roda: neste Mac)') -and ($ho -match 'computador de trabalho') -and ($ho -match 'em dobro')) $ho
 
     # --- gênero e personalidades só com o dono ---
@@ -242,6 +266,16 @@ try {
     Check 'instalador: registra um hook de cada (idempotente em duas rodadas)' ((Count-Ours 'Stop') -eq 1 -and (Count-Ours 'UserPromptSubmit') -eq 1 -and (Count-Ours 'Notification') -eq 1 -and (Count-Ours 'PreToolUse') -eq 1) (Get-Content -Raw $sj)
     Check 'instalador: mantém o hook e as chaves do usuário' ((@($st.hooks.Stop | ForEach-Object { $_.hooks } | Where-Object { $_.command -eq 'meu-hook.exe' }).Count -eq 1) -and ($st.model -eq 'x'))
     Check 'instalador: copia a skill com manifesto' ((Test-Path (Join-Path $inst 'skills\assistente-wpp\SKILL.md')) -and (Test-Path (Join-Path $inst 'skills\assistente-wpp\.install-manifest.json')))
+    Check 'instalador: instala o atalho /voz' ((Get-Content -Raw -Encoding UTF8 (Join-Path $inst 'skills\voz\SKILL.md')) -match '(?m)^name: voz')
+    $ic = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repo 'install.ps1'), '-Check', '-SkillsRoot', (Join-Path $inst 'skills'))
+    $null = & $Ps @ic
+    Check 'instalador: -Check confere a skill e o atalho' ($LASTEXITCODE -eq 0)
+    $outra = Join-Path $tmp 'inst-outra'; New-Item -ItemType Directory -Force -Path (Join-Path $outra 'skills\voz') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $outra 'skills\voz\SKILL.md'), "---`nname: voz`n---`nminha skill`n", $utf8)
+    $io = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repo 'install.ps1'), '-SemVigia', '-SemAvisoSessao', '-SkillsRoot', (Join-Path $outra 'skills'), '-PrivateDir', (Join-Path $outra 'priv'), '-ClaudeSettings', (Join-Path $outra 'settings.json'))
+    $o = (& $Ps @io | Out-String)
+    $null = & $Ps ($io + '-Remover')
+    Check 'instalador: nao sobrescreve nem apaga uma skill voz do dev' (((Get-Content -Raw (Join-Path $outra 'skills\voz\SKILL.md')) -match 'minha skill') -and ($o -match 'não é a nossa')) $o
     $ourCmds = @(@('Stop', 'UserPromptSubmit', 'Notification', 'PreToolUse') | ForEach-Object { @($st.hooks.$_) } | ForEach-Object { $_.hooks } | Where-Object { (@($_.args) -join ' ') -match 'aviso-sessao' } | ForEach-Object { $_.command } | Select-Object -Unique)
     Check 'instalador: os hooks chamam o PowerShell desta plataforma (powershell.exe / pwsh)' (($ourCmds.Count -eq 1) -and ($ourCmds[0] -eq $Ps)) ($ourCmds -join ', ')
     $null = & $Ps ($ia + '-SemAvisoSessao')
@@ -376,6 +410,14 @@ try {
         $sent = @(Get-Requests | Where-Object { $_.tool -eq 'send_text_message' })[-1]
         Check 'send: envia com o prefixo do nome escolhido e registra' ((((J $s).sent) -eq $true) -and ($sent.arguments.text -eq '*Jarvis:* Oi, Dev!') -and ((Run @('is-ours', '-MessageId', 'FAKE-1')).Rc -eq 0)) $s.Out
         Check 'send: sem @ no texto, não manda marcação' ($null -eq $sent.arguments.mentions) ($sent | ConvertTo-Json -Compress -Depth 5)
+        # Voz: as mesmas travas; a fala sai sem prefixo, link, marcacao e @numero.
+        $s = Run @('send', '-Voice', '-Chat', $memberJid, '-Text', '*Jarvis:* Oi, tudo *certo*? Segue o link https://exemplo.com/x, fala com @5500912340001.', '-Operator', 'claude', '-Token', $tk, '-DryRun')
+        Check 'voz: dry-run devolve a fala limpa' ((((J $s).voice) -eq $true) -and (((J $s).spoken) -eq 'Oi, tudo certo? Segue o link fala com .')) $s.Out
+        $nMedia = @(Get-Requests | Where-Object { $_.tool -eq 'send_media_message' }).Count
+        $s = Run @('send', '-Voice', '-Chat', $memberJid, '-Text', 'Oi!', '-Operator', 'claude', '-Token', $tk)
+        Check 'voz: sem chave recusa (rc 2) e nao manda audio' (($s.Rc -eq 2) -and ((Reason $s) -eq 'voz_sem_chave') -and (@(Get-Requests | Where-Object { $_.tool -eq 'send_media_message' }).Count -eq $nMedia)) $s.Out
+        $s = Run @('send', '-Voice', '-Chat', $strangerJid, '-Text', 'Oi!', '-Operator', 'claude', '-Token', $tk, '-DryRun')
+        Check 'voz: fora do time recusa o audio tambem' ((Reason $s) -eq 'fora_do_time_sem_pedido') $s.Out
         $s = Run @('send', '-Chat', $memberJid, '-Text', 'Oi, @5500912340001! Vê com @5500912349999 e @5500912340001; dev@5500900000000 não é marcação.', '-Operator', 'claude', '-Token', $tk)
         $sent = @(Get-Requests | Where-Object { $_.tool -eq 'send_text_message' })[-1]
         Check 'send: @número no texto vira marcação (sem repetir, sem pegar e-mail)' ((((J $s).sent) -eq $true) -and ((@($sent.arguments.mentions) -join ',') -eq '5500912340001,5500912349999')) ($sent | ConvertTo-Json -Compress -Depth 5)

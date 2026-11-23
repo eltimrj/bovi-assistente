@@ -3,7 +3,7 @@ assistente-wpp: utilitários determinísticos do assistente de WhatsApp de cada 
 Nenhum deles chama modelo de IA. Só `send` envia mensagem, e só com o volante (lease) válido.
 
   assistente.ps1 help [-Json]                                manual: o que o assistente faz, o que está ativo/inativo e como mudar
-  assistente.ps1 setup [-Name "<nome do assistente>"] [-Owner "<seu nome>"] [-Jid <linked_jid>|auto] [-Mode responder|triagem] [-Fuso GMT-3] [-Genero feminino|masculino|neutro]
+  assistente.ps1 setup [-Name "<nome do assistente>"] [-Owner "<seu nome>"] [-Jid <linked_jid>|auto] [-Mode responder|triagem] [-Fuso GMT-3] [-Genero feminino|masculino|neutro] [-VozId <id ou link da voz>]
                                                              grava/atualiza a configuração privada; -Jid auto lê do app
   assistente.ps1 now [-Due <RFC 3339>]                      hora agora (ou a de -Due) no fuso do dono e no do time
   assistente.ps1 check                                       a configuração está pronta? (rc 0 = sim; lista o que falta)
@@ -18,6 +18,10 @@ Nenhum deles chama modelo de IA. Só `send` envia mensagem, e só com o volante 
   assistente.ps1 messages -Chat <jid> [-Since <RFC 3339>] [-Limit 30]
   assistente.ps1 send -Chat <jid> -Text "<mensagem>" -Operator <op> -Token <n> [-DryRun] [-OwnerRequested] [-NewContactConfirmed]
                                                              camada de envio: pausa + lease + travas + conta + prefixo + registro
+  assistente.ps1 send -Voice -Chat <jid> -Text "<fala>" ...  mesmas travas; manda a fala como áudio (ElevenLabs, opcional)
+  assistente.ps1 tts -Text "<fala>" [-Out <arquivo.ogg>]     só gera o áudio, sem enviar (amostra para o dono ouvir)
+  assistente.ps1 vozes [-Text "<termo>"] [-Genero feminino|masculino|neutro]
+                                                             vozes brasileiras da biblioteca da ElevenLabs, para escolher
   assistente.ps1 team [-Chat <jid>]                         equipe (arquivo privado); com -Chat, quem é
   assistente.ps1 allow add|remove|list -Chat <jid> [-Name ".."] [-Note ".."] [-Due <RFC 3339>]
                                                              pedido explícito do dono: responder a alguém fora do time ou num grupo
@@ -35,7 +39,7 @@ mesmo nome têm precedência. Código de saída 2 = recusado; 1 = erro.
 #>
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('help', 'setup', 'check', 'persona', 'prefix', 'lease', 'sent', 'is-ours', 'watch', 'account', 'messages', 'send', 'config', 'resolve', 'name-key', 'name-match', 'heartbeat', 'followup', 'pause', 'intro-needed', 'team', 'allow', 'hold', 'now')]
+    [ValidateSet('help', 'setup', 'check', 'persona', 'prefix', 'lease', 'sent', 'is-ours', 'watch', 'account', 'messages', 'send', 'config', 'resolve', 'name-key', 'name-match', 'heartbeat', 'followup', 'pause', 'intro-needed', 'team', 'allow', 'hold', 'now', 'tts', 'vozes')]
     [string]$Command,
     [Parameter(Position = 1)][string]$Action,
     [string]$Text,
@@ -45,7 +49,8 @@ param(
     [string]$Name, [string]$Owner, [string]$Jid, [ValidateSet('', 'responder', 'triagem')][string]$Mode = '', [string]$Fuso,
     [ValidateSet('', 'feminino', 'masculino', 'neutro')][string]$Genero = '',
     [string]$Due, [string]$Note, [int]$MaxAgeSeconds = 120,
-    [int]$IntervalSeconds = 30, [switch]$Once, [switch]$DryRun, [switch]$NewContactConfirmed, [switch]$OwnerRequested, [switch]$Force, [switch]$Json
+    [int]$IntervalSeconds = 30, [switch]$Once, [switch]$DryRun, [switch]$NewContactConfirmed, [switch]$OwnerRequested, [switch]$Force, [switch]$Json,
+    [switch]$Voice, [string]$Out, [string]$VozId
 )
 
 $ErrorActionPreference = 'Stop'
@@ -767,6 +772,100 @@ function Get-CheckProblems {
 
 # ---------- manual (help) ----------
 
+# ---------- voz (ElevenLabs, opcional) ----------
+
+# Tudo fica no .env de cada dono: a chave da ElevenLabs (ELEVENLABS_API_KEY) e a voz escolhida. Sem chave, o
+# assistente segue só em texto. Sem voz escolhida, vale uma voz brasileira da biblioteca pelo gênero do assistente.
+# Se o plano do dono não liberar voz da biblioteca pela API, o padrão recua sozinho para uma voz padrão da
+# ElevenLabs (americana falando português), que funciona em qualquer plano. Voz escolhida pelo dono não recua.
+$VozPadrao = @{ feminino = 'RGymW84CSmfVugnA5tvA'; masculino = 'bJrNspxJVFovUxNBQ0wh'; neutro = 'KHmfNHtEjHhLK9eER20w' }        # Roberta, Marcelo Costa, Fernanda
+$VozReserva = @{ feminino = 'EXAVITQu4vr4xnSDxMaL'; masculino = 'cjVigY5qzO86Huf0OWal'; neutro = 'SAz9YHcvj6GT2YYXdXww' }       # Sarah, Eric, River
+function Get-VozGenero { $g = Get-Cfg 'ASSISTENTE_GENERO'; if ($VozPadrao.ContainsKey($g)) { $g } else { 'neutro' } }
+function Get-VozId {
+    $v = Get-Cfg 'ASSISTENTE_VOZ_ID'
+    if ($v) { return $v }
+    $VozPadrao[(Get-VozGenero)]
+}
+# Aceita o id (20 letras e números) ou um link da ElevenLabs que o contenha (…/voices/<id>, ?voiceId=<id>).
+function ConvertFrom-VozRef([string]$Value) {
+    $v = ([string]$Value).Trim()
+    if ($v -match '^[A-Za-z0-9]{20}$') { return $v }
+    if ($v -match '(?i)elevenlabs\.io' -and $v -match '(?:voices/|voiceId=|voice_id=)([A-Za-z0-9]{20})(?![A-Za-z0-9])') { return $Matches[1] }
+    ''
+}
+function Get-VozKey { Get-Cfg 'ELEVENLABS_API_KEY' }
+
+# A fala sai do texto da mensagem, sem o prefixo, links e marcação. O texto para voz já deve vir pensado para ser
+# ouvido; o que precisa ser copiado ou clicado vai em texto, junto.
+function ConvertTo-SpokenText([string]$Value) {
+    if ($null -eq $Value) { throw 'fala vazia' }
+    $t = $Value.TrimStart()
+    if ($AssistantName) {
+        $pattern = '^(\*{1,2}\s*' + [regex]::Escape($AssistantName.Trim()) + '\s*:\s*\*{1,2})\s*'
+        while ($t -match $pattern) { $t = [regex]::Replace($t, $pattern, '', 'IgnoreCase') }
+    }
+    $t = [regex]::Replace($t, '```[\s\S]*?```', ' ')
+    $t = [regex]::Replace($t, '\[([^\]]+)\]\([^)]+\)', '$1')
+    $t = [regex]::Replace($t, 'https?://\S+', ' ')
+    $t = [regex]::Replace($t, '(?<![\w@])@\d{10,15}\b', ' ')
+    $t = [regex]::Replace($t, '(?<!\w)[*_~`]+|[*_~`]+(?!\w)', '')
+    $t = [regex]::Replace($t, '[ \t]+', ' ').Trim()
+    if ($t -eq '') { throw 'fala vazia' }
+    $t
+}
+
+# Gera o áudio em Ogg/Opus mono. Com ffmpeg: MP3 da ElevenLabs convertido (e o ajuste de tom, se houver); sem ffmpeg,
+# Opus direto da ElevenLabs.
+function New-Voz([string]$Spoken, [string]$Dest) {
+    if ((Get-Cfg 'ASSISTENTE_VOZ' '1') -eq '0') { return [ordered]@{ ok = $false; reason = 'voz_desligada'; dica = 'ASSISTENTE_VOZ=0 no .env: responda em texto' } }
+    $key = Get-VozKey
+    if (-not $key) { return [ordered]@{ ok = $false; reason = 'voz_sem_chave'; dica = 'sem ELEVENLABS_API_KEY no .env: responda em texto (o dono liga a voz quando quiser, §Voz da SKILL.md)' } }
+    $max = [int](Get-Cfg 'ASSISTENTE_VOZ_MAX' '900')
+    if ($Spoken.Length -gt $max) { return [ordered]@{ ok = $false; reason = 'voz_longa_demais'; chars = $Spoken.Length; max = $max; dica = 'encurte a fala (o detalhe vai em texto) ou responda só em texto' } }
+    $ffmpeg = (Get-Command ffmpeg -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+    $fmt = if ($ffmpeg) { 'mp3_44100_128' } else { 'opus_48000_64' }
+    $voiceId = Get-VozId
+    $escolhida = [bool](Get-Cfg 'ASSISTENTE_VOZ_ID')
+    $body = [ordered]@{ text = $Spoken; model_id = (Get-Cfg 'ASSISTENTE_VOZ_MODELO' 'eleven_multilingual_v2') }
+    $vs = [ordered]@{}
+    foreach ($pair in @(@('ASSISTENTE_VOZ_ESTABILIDADE', 'stability'), @('ASSISTENTE_VOZ_SIMILARIDADE', 'similarity_boost'), @('ASSISTENTE_VOZ_ESTILO', 'style'), @('ASSISTENTE_VOZ_VELOCIDADE', 'speed'))) {
+        $raw = Get-Cfg $pair[0]
+        if ($raw) { $vs[$pair[1]] = [double]::Parse($raw, [Globalization.CultureInfo]::InvariantCulture) }
+    }
+    if ($vs.Count -gt 0) { $body['voice_settings'] = $vs }
+    $json = $body | ConvertTo-Json -Compress
+    $src = if ($ffmpeg) { [IO.Path]::ChangeExtension($Dest, '.src.mp3') } else { $Dest }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Dest) | Out-Null
+    $recuou = $false
+    while ($true) {
+        try {
+            Invoke-WebRequest -Uri "https://api.elevenlabs.io/v1/text-to-speech/$voiceId`?output_format=$fmt" -Method Post -Headers @{ 'xi-api-key' = $key; Accept = 'audio/*' } -ContentType 'application/json; charset=utf-8' -Body ($Utf8.GetBytes($json)) -OutFile $src -UseBasicParsing -TimeoutSec 60 | Out-Null
+            break
+        }
+        catch {
+            $status = 0; try { $status = [int]$_.Exception.Response.StatusCode } catch { }
+            Remove-Item -LiteralPath $src -ErrorAction SilentlyContinue
+            # Padrão brasileiro recusado (plano sem voz da biblioteca pela API, voz retirada): recua uma vez para a reserva.
+            if (-not $escolhida -and -not $recuou -and @(400, 402, 403, 404, 422) -contains $status) { $voiceId = $VozReserva[(Get-VozGenero)]; $recuou = $true; continue }
+            $why = switch ($status) { 401 { 'voz_chave_recusada' } 402 { 'voz_sem_credito' } 403 { 'voz_nao_liberada_no_plano' } 404 { 'voz_nao_encontrada' } 429 { 'voz_limite' } default { 'voz_falhou' } }
+            return [ordered]@{ ok = $false; reason = $why; http = $status; dica = 'responda em texto; se persistir, avise o dono' }
+        }
+    }
+    if ($ffmpeg) {
+        $af = @()
+        $tom = Get-Cfg 'ASSISTENTE_VOZ_TOM'   # semitons; -1.5 = um pouco mais grave, sem mudar a velocidade
+        if ($tom) {
+            $st = [double]::Parse($tom, [Globalization.CultureInfo]::InvariantCulture)
+            if ($st -ne 0) { $af = @('-af', ('rubberband=pitch={0}:formant=preserved:pitchq=quality' -f [Math]::Pow(2, $st / 12).ToString('0.######', [Globalization.CultureInfo]::InvariantCulture))) }
+        }
+        & $ffmpeg -hide_banner -loglevel error -y -i $src @af -c:a libopus -b:a 32k -ac 1 -ar 48000 -application voip $Dest
+        $code = $LASTEXITCODE
+        Remove-Item -LiteralPath $src -ErrorAction SilentlyContinue
+        if ($code -ne 0 -or -not (Test-Path -LiteralPath $Dest)) { return [ordered]@{ ok = $false; reason = 'voz_conversao_falhou'; dica = 'o ffmpeg não converteu o áudio: responda em texto' } }
+    }
+    [ordered]@{ ok = $true; file = $Dest; chars = $Spoken.Length; voice_id = $voiceId; model = $body.model_id; voz_reserva = $recuou }
+}
+
 # Cada funcionalidade com o estado real nesta máquina: ativo, inativo ou atenção, e como mudar.
 function Get-HelpReport {
     $items = New-Object System.Collections.Generic.List[object]
@@ -816,6 +915,9 @@ function Get-HelpReport {
     $fu = @(Get-FollowupItems | Where-Object { -not $_.done }).Count
     Add-Item 'Atendimento' 'Retornos prometidos' 'ativo' "$fu pendente(s)" 'o assistente registra sozinho quando promete retorno'
     Add-Item 'Atendimento' 'Recado a pedido seu' 'ativo' 'pelo Claude Code ou escrevendo na conversa consigo mesmo no WhatsApp' '"manda pro Fulano que…"'
+    $vozOn = (Get-VozKey) -and (Get-Cfg 'ASSISTENTE_VOZ' '1') -ne '0'
+    $vozDet = if ($vozOn) { "responde em áudio a quem mandou áudio, ou a pedido; voz $(Get-VozId)" + $(if (Get-Cfg 'ASSISTENTE_VOZ_ID') { '' } else { ' (brasileira padrão pelo gênero)' }) } elseif (Get-VozKey) { 'desligada no .env (ASSISTENTE_VOZ=0)' } else { 'sem chave da ElevenLabs: só texto' }
+    Add-Item 'Atendimento' 'Voz (áudio)' $(if ($vozOn) { 'ativo' } else { 'inativo' }) $vozDet '/voz (liga, troca ou ajusta a voz, com amostras)'
 
     $paused = Test-Path -LiteralPath $PausePath
     Add-Item 'Funcionamento' 'Ligado' $(if ($paused) { 'inativo' } else { 'ativo' }) $(if ($paused) { 'pausado por você' } else { 'não pausado' }) '"desliga meu assistente" / "religa meu assistente"'
@@ -889,6 +991,11 @@ try {
             if ($Owner) { $pairs['ASSISTENTE_DONO'] = $Owner.Trim() }
             if ($Mode) { $pairs['ASSISTENTE_AUTONOMIA'] = $Mode }
             if ($Genero) { $pairs['ASSISTENTE_GENERO'] = $Genero }
+            if ($VozId) {
+                $vid = ConvertFrom-VozRef $VozId
+                if (-not $vid) { Out-Json ([ordered]@{ saved = $false; reason = 'voz_invalida'; dica = 'passe o id da voz (20 letras e números) ou o link dela na ElevenLabs' }); exit 2 }
+                $pairs['ASSISTENTE_VOZ_ID'] = $vid
+            }
             if ($Fuso) {
                 try { $null = Resolve-Fuso $Fuso } catch { Out-Json ([ordered]@{ saved = $false; reason = 'fuso_invalido'; dica = 'use GMT-3, UTC+1, GMT+5:30 ou um id do Windows' }); exit 2 }
                 $pairs['ASSISTENTE_FUSO'] = $Fuso.Trim()
@@ -901,7 +1008,7 @@ try {
                 }
                 else { $pairs['ASSISTENTE_CONTA_JID'] = (Get-BaseJid $Jid) }
             }
-            if ($pairs.Count -eq 0) { throw 'informe ao menos um de -Name, -Owner, -Jid, -Mode, -Fuso, -Genero' }
+            if ($pairs.Count -eq 0) { throw 'informe ao menos um de -Name, -Owner, -Jid, -Mode, -Fuso, -Genero, -VozId' }
             Set-EnvKeys $pairs
             $shown = [ordered]@{}; foreach ($k in $pairs.Keys) { $shown[$k] = $(if ($k -like '*JID') { Mask $pairs[$k] } else { $pairs[$k] }) }
             Out-Json ([ordered]@{ saved = $true; file = $ConfigPath; values = $shown }); exit 0
@@ -976,6 +1083,18 @@ try {
             $known = $toOwner -or (Test-ContactedByUs $Chat)
             if (-not $known) { try { $known = @((Invoke-Mcp 'get_chat_messages' @{ chat_jid = $Chat; limit = 1 }).messages).Count -gt 0 } catch { $known = $false } }
             if (-not $known -and -not $NewContactConfirmed) { Refuse 'primeiro_contato_sem_confirmacao' 'rode resolve -Name, mostre os candidatos ao dono e use -NewContactConfirmed só depois que ele confirmar este número' }
+            if ($Voice) {
+                # Áudio: as mesmas travas de cima; a fala vai sem prefixo, link e marcação (o texto que acompanha, não).
+                $spoken = ConvertTo-SpokenText $msg
+                if ($DryRun) { Out-Json ([ordered]@{ sent = $false; dry_run = $true; voice = $true; chat = $Chat; spoken = $spoken; chars = $spoken.Length }); exit 0 }
+                $file = Join-Path (Join-Path $StateDir 'voz') ('fala-{0:yyyyMMddHHmmssfff}-{1}.ogg' -f [DateTime]::UtcNow, $PID)
+                $v = New-Voz $spoken $file
+                if (-not $v.ok) { $v['sent'] = $false; $v['voice'] = $true; Out-Json $v; exit 2 }
+                try { $r = Invoke-Mcp 'send_media_message' @{ to = $Chat; type = 'audio'; url = $file } }
+                finally { Remove-Item -LiteralPath $file -ErrorAction SilentlyContinue }   # o áudio não fica guardado
+                if ($r.message_id) { Add-SentLine $Chat $r.message_id }
+                Out-Json ([ordered]@{ sent = [bool]$r.message_id; voice = $true; message_id = $r.message_id; chars = $v.chars; note = $r.note }); exit 0
+            }
             if ($DryRun) { Out-Json ([ordered]@{ sent = $false; dry_run = $true; chat = $Chat; text = $msg }); exit 0 }
             # Marcação: cada @<número com DDI> no texto vai também em mentions, para o WhatsApp mostrar o nome e notificar.
             # Em grupo, o @número vira @LID no texto e <lid>@lid em mentions; sem LID conhecido, fica o número.
@@ -993,6 +1112,25 @@ try {
             $r = Invoke-Mcp 'send_text_message' $sendArgs
             if ($r.message_id) { Add-SentLine $Chat $r.message_id }
             Out-Json ([ordered]@{ sent = [bool]$r.sent; message_id = $r.message_id; note = $r.note }); exit 0
+        }
+        'tts' {
+            # Só gera o arquivo: nada sai pelo WhatsApp.
+            $spoken = ConvertTo-SpokenText $Text
+            $dest = if ($Out) { [IO.Path]::GetFullPath($Out) } else { Join-Path (Join-Path $StateDir 'voz') ('amostra-{0:yyyyMMddHHmmss}.ogg' -f [DateTime]::Now) }
+            $v = New-Voz $spoken $dest
+            Out-Json $v
+            if ($v.ok) { exit 0 } else { exit 2 }
+        }
+        'vozes' {
+            # Vozes brasileiras da biblioteca da ElevenLabs, as mais usadas primeiro. Escolhida: setup -VozId <id>.
+            $key = Get-VozKey
+            if (-not $key) { Out-Json ([ordered]@{ ok = $false; reason = 'voz_sem_chave'; dica = 'ponha ELEVENLABS_API_KEY no .env para buscar vozes' }); exit 2 }
+            $q = 'page_size=20&language=pt&accent=brazilian&sort=usage_character_count_1y'
+            if ($Genero -and $Genero -ne 'neutro') { $q += '&gender=' + $(if ($Genero -eq 'feminino') { 'female' } else { 'male' }) }
+            if ($Text) { $q += '&search=' + [uri]::EscapeDataString($Text) }
+            $res = Invoke-RestMethod -Uri "https://api.elevenlabs.io/v1/shared-voices?$q" -Headers @{ 'xi-api-key' = $key } -TimeoutSec 30
+            Out-Json ([ordered]@{ ok = $true; atual = (Get-VozId); vozes = @($res.voices | ForEach-Object { [ordered]@{ nome = $_.name; id = $_.voice_id; genero = $_.gender; idade = $_.age; uso = $_.use_case; descricao = $_.description; amostra = $_.preview_url } }) })
+            exit 0
         }
         'heartbeat' { $h = Get-Heartbeat $MaxAgeSeconds; Out-Json $h; if ($h.status -eq 'ok') { exit 0 } else { exit 2 } }
         'team' {
@@ -1098,6 +1236,9 @@ try {
                 $o[$k] = $v
             }
             $o['ASSISTENTE_MCP_TOKEN'] = $(if ($McpToken) { '(definido)' } else { '' })
+            $o['ELEVENLABS_API_KEY'] = $(if (Get-VozKey) { '(definida)' } else { '' })
+            foreach ($k in 'ASSISTENTE_VOZ', 'ASSISTENTE_VOZ_ID', 'ASSISTENTE_VOZ_MODELO', 'ASSISTENTE_VOZ_ESTABILIDADE', 'ASSISTENTE_VOZ_SIMILARIDADE', 'ASSISTENTE_VOZ_ESTILO', 'ASSISTENTE_VOZ_VELOCIDADE', 'ASSISTENTE_VOZ_TOM', 'ASSISTENTE_VOZ_MAX') { $o[$k] = Get-Cfg $k }
+            $o['ASSISTENTE_VOZ_ID_efetivo'] = (Get-VozId)
             $o['ASSISTENTE_AVISO_JID_efetivo'] = (Mask $NotifyJid)
             $o['ASSISTENTE_STATE_DIR'] = $StateDir
             Out-Json $o; exit 0

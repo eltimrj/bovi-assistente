@@ -58,6 +58,8 @@ WhatsApp ── app WhatsApp MCP ── detector (sem IA, a cada 30 s)
 - App [**WhatsApp MCP**](https://github.com/BrOrlandi/whatsapp-mcp-local), aberto e com o seu WhatsApp
   conectado.
 - `gh` (GitHub CLI) logado, para o assistente conferir PRs.
+- Opcional, para a voz: uma conta na [ElevenLabs](https://elevenlabs.io) (a chave é sua) e o `ffmpeg`
+  (`winget install Gyan.FFmpeg` / `brew install ffmpeg`). Sem o ffmpeg a voz funciona, mas sem o ajuste de tom.
 
 ## Instalar
 
@@ -123,6 +125,7 @@ Para usar em script, há o `help -Json`.
 | Pôr alguém novo no time | "adiciona a Fulana na equipe do meu assistente" |
 | Desligar por um tempo | "desliga meu assistente" (`pause on`); para religar, "religa" |
 | Só triagem, sem responder sozinho | "deixa meu assistente só em triagem" |
+| Ligar, trocar ou ajustar a voz | `/voz`: ele abre o `.env` para você colar a chave da ElevenLabs, mostra vozes brasileiras com amostras e grava a escolhida |
 | Ver horários em outro fuso | "usa o fuso GMT+1 nos meus horários". O padrão é GMT-3, o fuso do time; para o time, os horários seguem em GMT-3 e, se os fusos forem diferentes, saem com o fuso escrito ao lado |
 
 ## Aviso de sessão
@@ -136,6 +139,20 @@ o assistente te avisa no WhatsApp com o título da sessão e um jeito de voltar 
 - **Remote Control ligado:** também o link para abrir no celular.
 
 Desligar: `ASSISTENTE_AVISO_SESSAO=0` em `~/.assistente-wpp/assistente.env`.
+
+## Voz (opcional)
+
+Digite **`/voz`** no Claude Code e ele te orienta. O assistente pode responder **em áudio** a quem mandar áudio (ou
+quando pedirem), com uma voz da [ElevenLabs](https://elevenlabs.io). Link, número, data e lista continuam em texto, logo depois do áudio. A chave e a
+voz escolhida ficam só no seu `~/.assistente-wpp/assistente.env`; nada disso vai para o repositório.
+
+- **Sem escolher voz**, ele usa uma voz brasileira pelo gênero do assistente. Se o seu plano não liberar voz da
+  biblioteca pela API, recua sozinho para uma voz padrão da ElevenLabs (americana falando português).
+- **Outras vozes brasileiras:** `assistente.ps1 vozes` lista as mais usadas, e `assistente.ps1 tts -Text "…"` gera
+  uma amostra sem enviar nada.
+- **Ajuste fino** (estabilidade, estilo, velocidade e tom) no `.env`. Um ponto de partida natural: `0.30 / 0.80 /
+  0.45 / 1.08`.
+- O áudio chega como **arquivo de áudio**, não como nota de voz: o app WhatsApp MCP ainda não manda nota de voz.
 
 ## Atualizar
 
