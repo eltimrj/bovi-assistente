@@ -46,7 +46,8 @@ Telefone nunca entra em repositório.
 ## 4. Atender alguém do time
 
 1. Ler o chat: `messages -Chat <jid> -Since <última lida − 60 s>`. Áudio: `transcribe_audio` do MCP `whatsapp`;
-   imagem: `download_media`.
+   imagem: `download_media`. Quem mandou áudio recebe a resposta em áudio, se a voz estiver ligada
+   (`send -Voice`, SKILL.md §5b), com link e dado em texto logo depois.
 2. **Quem é quem no chat:** `from_me: false` = a pessoa (é o que pede resposta). `from_me: true` registrado
    (`is-ours`) = o assistente. `from_me: true` não registrado = o dono: a conversa entra em espera.
 3. **Apresentação** só se `intro-needed -Chat <jid>` der `true`, numa linha: "*<Nome>:* Oi, Fulano! Sou <Nome>,

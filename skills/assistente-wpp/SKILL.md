@@ -96,6 +96,8 @@ cortesia. Nada aqui envia mensagem a ninguém do time.
    ele usar outro app ou quiser forçar um.
 8. **Testar.** Peça a ele para escrever qualquer coisa na conversa consigo mesmo ("Você" no WhatsApp). Em até um
    minuto o assistente responde ali, no tom escolhido. Pronto.
+9. **Voz (opcional, ofereça no fim).** Pergunte se ele quer que o assistente também responda em áudio a quem mandar
+   áudio. Se quiser: §5b.
 
 ## 2. Regras inegociáveis
 
@@ -115,6 +117,7 @@ cortesia. Nada aqui envia mensagem a ninguém do time.
 | Interface, não autoria: o assistente não aparece em PR, card ou documento | PROTOCOLO §9 |
 | Nunca contatar a pessoa errada: `resolve` + confirmação do dono | §6 |
 | Envio só pelo `send`, nunca `send_text_message` direto (pularia as travas, o prefixo e o registro) | §5 |
+| Áudio só para quem mandou áudio, ou a pedido; link, número, data e lista seguem em texto, junto | §5b |
 
 ## 3. Personalidade: usar e evoluir
 
@@ -168,6 +171,41 @@ marcação junto, e o WhatsApp mostra o nome. Recusas (rc 2, campo `reason`):
 
 Mídia, que o `send` não cobre: `send_media_message` do MCP `whatsapp`, com a legenda passada antes por
 `& $S prefix -Text "…"` e o envio registrado com `& $S sent -Chat <jid> -MessageId <id>`.
+
+## 5b. Voz (opcional)
+
+O assistente pode responder em **áudio**, com uma voz da ElevenLabs. É opcional: sem a chave, tudo segue em texto.
+
+**Ligar (com o dono, um passo por vez):**
+1. Ele cria uma conta na [ElevenLabs](https://elevenlabs.io) e gera uma chave de API (Perfil › API Keys).
+2. **A chave quem cola é ele**, no `~/.assistente-wpp/assistente.env`, na linha `ELEVENLABS_API_KEY=`. Abra o
+   arquivo no editor para ele; não peça a chave no chat e nunca a escreva em comando, repositório ou mensagem.
+3. **Escolher a voz.** Sem escolha, vale uma voz padrão pelo gênero do assistente (Sarah, Eric ou River). Elas são
+   americanas falando português e podem soar artificiais. Para algo mais natural, `& $S vozes [-Genero …]
+   [-Text "calma"]` lista vozes brasileiras. Gere amostras com a mesma fala
+   (`& $S tts -Text "<fala>" -Out <arquivo>`, trocando `ASSISTENTE_VOZ_ID` só no ambiente da chamada) e deixe ele
+   ouvir antes de gravar. Escolhida: `& $S setup -VozId <id ou link>`. Vozes da biblioteca podem exigir plano pago;
+   se o `tts` voltar `voz_nao_liberada_no_plano`, diga isso a ele.
+4. **Ajuste fino, se ele quiser:** `ASSISTENTE_VOZ_ESTABILIDADE`, `_SIMILARIDADE`, `_ESTILO`, `_VELOCIDADE` e
+   `_TOM` no `.env` (ponto de partida natural: 0.30 / 0.80 / 0.45 / 1.08, tom vazio). Uma mudança por vez, com
+   amostra.
+
+**Quando falar em áudio:** quando a mensagem a que ele responde é um **áudio**, ou quando a pessoa (ou o dono) pediu
+áudio. Fora disso, texto.
+
+```powershell
+& $S send -Voice -Chat <jid> -Text "<fala>" -Operator claude -Token <n>   # as mesmas travas do texto
+```
+
+- **Fala escrita para ser ouvida:** curta (até ~45 s; `ASSISTENTE_VOZ_MAX`), natural, sem lista, link ou emoji.
+- **O que precisa ser copiado ou clicado vai em texto**, numa bolha normal logo depois: link, número, data e
+  horário, lista, código. A fala avisa ("te mando o link por escrito").
+- **Apresentação** (`intro-needed` = `true`) vai **em texto antes** do primeiro áudio: o áudio não leva o
+  `*<Nome>:*`.
+- **Falhou** (`voz_sem_chave`, `voz_sem_credito`, `voz_limite`, `voz_nao_encontrada`, `voz_falhou`…): responda em
+  texto, sem comentar a falha com a pessoa. Chave recusada ou sem crédito: uma linha ao dono.
+- O arquivo de áudio é apagado depois do envio. Chega como **arquivo de áudio**, não como nota de voz: o app WhatsApp
+  MCP ainda não manda nota de voz.
 
 ## 6. Destinatário certo
 
