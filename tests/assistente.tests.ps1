@@ -266,6 +266,16 @@ try {
     Check 'instalador: registra um hook de cada (idempotente em duas rodadas)' ((Count-Ours 'Stop') -eq 1 -and (Count-Ours 'UserPromptSubmit') -eq 1 -and (Count-Ours 'Notification') -eq 1 -and (Count-Ours 'PreToolUse') -eq 1) (Get-Content -Raw $sj)
     Check 'instalador: mantém o hook e as chaves do usuário' ((@($st.hooks.Stop | ForEach-Object { $_.hooks } | Where-Object { $_.command -eq 'meu-hook.exe' }).Count -eq 1) -and ($st.model -eq 'x'))
     Check 'instalador: copia a skill com manifesto' ((Test-Path (Join-Path $inst 'skills\assistente-wpp\SKILL.md')) -and (Test-Path (Join-Path $inst 'skills\assistente-wpp\.install-manifest.json')))
+    Check 'instalador: instala o atalho /voz' ((Get-Content -Raw -Encoding UTF8 (Join-Path $inst 'skills\voz\SKILL.md')) -match '(?m)^name: voz')
+    $ic = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repo 'install.ps1'), '-Check', '-SkillsRoot', (Join-Path $inst 'skills'))
+    $null = & $Ps @ic
+    Check 'instalador: -Check confere a skill e o atalho' ($LASTEXITCODE -eq 0)
+    $outra = Join-Path $tmp 'inst-outra'; New-Item -ItemType Directory -Force -Path (Join-Path $outra 'skills\voz') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $outra 'skills\voz\SKILL.md'), "---`nname: voz`n---`nminha skill`n", $utf8)
+    $io = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $repo 'install.ps1'), '-SemVigia', '-SemAvisoSessao', '-SkillsRoot', (Join-Path $outra 'skills'), '-PrivateDir', (Join-Path $outra 'priv'), '-ClaudeSettings', (Join-Path $outra 'settings.json'))
+    $o = (& $Ps @io | Out-String)
+    $null = & $Ps ($io + '-Remover')
+    Check 'instalador: nao sobrescreve nem apaga uma skill voz do dev' (((Get-Content -Raw (Join-Path $outra 'skills\voz\SKILL.md')) -match 'minha skill') -and ($o -match 'não é a nossa')) $o
     $ourCmds = @(@('Stop', 'UserPromptSubmit', 'Notification', 'PreToolUse') | ForEach-Object { @($st.hooks.$_) } | ForEach-Object { $_.hooks } | Where-Object { (@($_.args) -join ' ') -match 'aviso-sessao' } | ForEach-Object { $_.command } | Select-Object -Unique)
     Check 'instalador: os hooks chamam o PowerShell desta plataforma (powershell.exe / pwsh)' (($ourCmds.Count -eq 1) -and ($ourCmds[0] -eq $Ps)) ($ourCmds -join ', ')
     $null = & $Ps ($ia + '-SemAvisoSessao')

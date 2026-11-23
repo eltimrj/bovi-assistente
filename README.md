@@ -125,8 +125,7 @@ Para usar em script, há o `help -Json`.
 | Pôr alguém novo no time | "adiciona a Fulana na equipe do meu assistente" |
 | Desligar por um tempo | "desliga meu assistente" (`pause on`); para religar, "religa" |
 | Só triagem, sem responder sozinho | "deixa meu assistente só em triagem" |
-| Ligar a voz | "liga a voz do meu assistente": ele abre o `.env` para você colar a chave da ElevenLabs; depois responde em áudio a quem mandar áudio |
-| Escolher a voz | "me mostra vozes brasileiras" (ele gera amostras para você ouvir) ou "troca a voz para <link da ElevenLabs>" |
+| Ligar, trocar ou ajustar a voz | `/voz`: ele abre o `.env` para você colar a chave da ElevenLabs, mostra vozes brasileiras com amostras e grava a escolhida |
 | Ver horários em outro fuso | "usa o fuso GMT+1 nos meus horários". O padrão é GMT-3, o fuso do time; para o time, os horários seguem em GMT-3 e, se os fusos forem diferentes, saem com o fuso escrito ao lado |
 
 ## Aviso de sessão
@@ -143,8 +142,8 @@ Desligar: `ASSISTENTE_AVISO_SESSAO=0` em `~/.assistente-wpp/assistente.env`.
 
 ## Voz (opcional)
 
-O assistente pode responder **em áudio** a quem mandar áudio (ou quando pedirem), com uma voz da
-[ElevenLabs](https://elevenlabs.io). Link, número, data e lista continuam em texto, logo depois do áudio. A chave e a
+Digite **`/voz`** no Claude Code e ele te orienta. O assistente pode responder **em áudio** a quem mandar áudio (ou
+quando pedirem), com uma voz da [ElevenLabs](https://elevenlabs.io). Link, número, data e lista continuam em texto, logo depois do áudio. A chave e a
 voz escolhida ficam só no seu `~/.assistente-wpp/assistente.env`; nada disso vai para o repositório.
 
 - **Sem escolher voz**, ele usa uma voz brasileira pelo gênero do assistente. Se o seu plano não liberar voz da

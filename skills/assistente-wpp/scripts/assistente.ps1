@@ -917,7 +917,7 @@ function Get-HelpReport {
     Add-Item 'Atendimento' 'Recado a pedido seu' 'ativo' 'pelo Claude Code ou escrevendo na conversa consigo mesmo no WhatsApp' '"manda pro Fulano que…"'
     $vozOn = (Get-VozKey) -and (Get-Cfg 'ASSISTENTE_VOZ' '1') -ne '0'
     $vozDet = if ($vozOn) { "responde em áudio a quem mandou áudio, ou a pedido; voz $(Get-VozId)" + $(if (Get-Cfg 'ASSISTENTE_VOZ_ID') { '' } else { ' (brasileira padrão pelo gênero)' }) } elseif (Get-VozKey) { 'desligada no .env (ASSISTENTE_VOZ=0)' } else { 'sem chave da ElevenLabs: só texto' }
-    Add-Item 'Atendimento' 'Voz (áudio)' $(if ($vozOn) { 'ativo' } else { 'inativo' }) $vozDet '"liga a voz do meu assistente" (chave da ElevenLabs no .env) / "troca a voz para <link>" / "me mostra vozes brasileiras"'
+    Add-Item 'Atendimento' 'Voz (áudio)' $(if ($vozOn) { 'ativo' } else { 'inativo' }) $vozDet '/voz (liga, troca ou ajusta a voz, com amostras)'
 
     $paused = Test-Path -LiteralPath $PausePath
     Add-Item 'Funcionamento' 'Ligado' $(if ($paused) { 'inativo' } else { 'ativo' }) $(if ($paused) { 'pausado por você' } else { 'não pausado' }) '"desliga meu assistente" / "religa meu assistente"'

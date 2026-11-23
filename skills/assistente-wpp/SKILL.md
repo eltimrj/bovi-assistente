@@ -97,7 +97,7 @@ cortesia. Nada aqui envia mensagem a ninguém do time.
 8. **Testar.** Peça a ele para escrever qualquer coisa na conversa consigo mesmo ("Você" no WhatsApp). Em até um
    minuto o assistente responde ali, no tom escolhido. Pronto.
 9. **Voz (opcional, ofereça no fim).** Pergunte se ele quer que o assistente também responda em áudio a quem mandar
-   áudio. Se quiser: §5b.
+   áudio. Se quiser: §5b. Diga que depois é só digitar `/voz` para ligar, trocar ou ajustar a voz.
 
 ## 2. Regras inegociáveis
 
@@ -175,6 +175,7 @@ Mídia, que o `send` não cobre: `send_media_message` do MCP `whatsapp`, com a l
 ## 5b. Voz (opcional)
 
 O assistente pode responder em **áudio**, com uma voz da ElevenLabs. É opcional: sem a chave, tudo segue em texto.
+O atalho **`/voz`** (skill `voz`, instalada junto) conduz o dono pelos passos abaixo.
 
 **Ligar (com o dono, um passo por vez):**
 1. Ele cria uma conta na [ElevenLabs](https://elevenlabs.io) e gera uma chave de API (Perfil › API Keys).

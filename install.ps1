@@ -31,6 +31,13 @@ $Src = Join-Path $PSScriptRoot "skills\$Skill"
 . (Join-Path $Src 'scripts\plataforma.ps1')
 $Target = Join-Path $SkillsRoot $Skill
 $TaskName = 'AssistenteWppVigia'
+# Atalho /voz: uma skill de um arquivo só, instalada ao lado. Só é tocada se for a nossa (tem a marca), para nunca
+# sobrescrever nem apagar uma skill "voz" do próprio dev.
+$VozSrc = Join-Path $PSScriptRoot 'skills\voz\SKILL.md'
+$VozDir = Join-Path $SkillsRoot 'voz'
+$VozDst = Join-Path $VozDir 'SKILL.md'
+$VozMarca = 'Atalho instalado junto com a skill assistente-wpp'
+function Test-VozNossa { -not (Test-Path -LiteralPath $VozDst) -or ((Get-Content -LiteralPath $VozDst -Raw -Encoding UTF8) -match [regex]::Escape($VozMarca)) }
 $Plist = Join-Path $LaunchAgentsDir "$VigiaRotulo.plist"
 $UsaLaunchctl = ($LaunchAgentsDir -eq (Join-Path $HOME 'Library/LaunchAgents'))
 
@@ -165,6 +172,7 @@ if ($Remover) {
     $d = Join-Path $Target 'scripts\assistente-despachante.ps1'
     if (Test-Path -LiteralPath $d) { & (Get-PsExe) -NoProfile -ExecutionPolicy Bypass -File $d -Mode stop }
     if (Test-Path -LiteralPath $Target) { Remove-Item -Recurse -Force -LiteralPath $Target; Write-Output "skill removida: $Target" }
+    if ((Test-Path -LiteralPath $VozDst) -and (Test-VozNossa)) { Remove-Item -Recurse -Force -LiteralPath $VozDir; Write-Output "atalho removido: $VozDir" }
     Write-Output "configuração preservada em $PrivateDir (apague à mão se quiser)"
     exit 0
 }
@@ -172,6 +180,8 @@ if ($Remover) {
 $map = Get-SourceMap
 if ($Check) {
     $p = @(Compare-Install $Target $map)
+    if (-not (Test-Path -LiteralPath $VozDst)) { $p += 'falta o atalho /voz' }
+    elseif ((Get-Sha $VozDst) -ne (Get-Sha $VozSrc)) { $p += 'difere: atalho /voz' }
     if ($p.Count -eq 0) { Write-Output "ok     $Target"; exit 0 }
     Write-Output "falha  $Target"; $p | ForEach-Object { Write-Output "         $_" }; exit 1
 }
@@ -204,6 +214,11 @@ else {
     Move-Item -LiteralPath $staging -Destination $Target
     Write-Output "instal $Target ($($files.Count) arquivos)"
 }
+
+# Atalho /voz.
+if (-not (Test-VozNossa)) { Write-Output "aviso  já existe uma skill 'voz' que não é a nossa em ${VozDir}: o atalho /voz não foi instalado" }
+elseif ((Test-Path -LiteralPath $VozDst) -and (Get-Sha $VozDst) -eq (Get-Sha $VozSrc)) { Write-Output "igual  $VozDir" }
+else { New-Item -ItemType Directory -Force -Path $VozDir | Out-Null; Copy-Item -LiteralPath $VozSrc -Destination $VozDst -Force; Write-Output "instal $VozDir (atalho /voz)" }
 
 # Pasta privada: configuração e exemplo da equipe, sem sobrescrever o que já existe.
 New-Item -ItemType Directory -Force -Path $PrivateDir, (Join-Path $PrivateDir 'contatos') | Out-Null
