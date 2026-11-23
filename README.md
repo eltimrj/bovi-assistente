@@ -147,10 +147,10 @@ O assistente pode responder **em áudio** a quem mandar áudio (ou quando pedire
 [ElevenLabs](https://elevenlabs.io). Link, número, data e lista continuam em texto, logo depois do áudio. A chave e a
 voz escolhida ficam só no seu `~/.assistente-wpp/assistente.env`; nada disso vai para o repositório.
 
-- **Sem escolher voz**, ele usa uma das vozes padrão da ElevenLabs pelo gênero do assistente. Elas funcionam em
-  qualquer plano, mas são americanas falando português.
-- **Vozes brasileiras** soam bem mais naturais: `assistente.ps1 vozes` lista as mais usadas, e
-  `assistente.ps1 tts -Text "…"` gera uma amostra sem enviar nada. As da biblioteca podem exigir plano pago.
+- **Sem escolher voz**, ele usa uma voz brasileira pelo gênero do assistente. Se o seu plano não liberar voz da
+  biblioteca pela API, recua sozinho para uma voz padrão da ElevenLabs (americana falando português).
+- **Outras vozes brasileiras:** `assistente.ps1 vozes` lista as mais usadas, e `assistente.ps1 tts -Text "…"` gera
+  uma amostra sem enviar nada.
 - **Ajuste fino** (estabilidade, estilo, velocidade e tom) no `.env`. Um ponto de partida natural: `0.30 / 0.80 /
   0.45 / 1.08`.
 - O áudio chega como **arquivo de áudio**, não como nota de voz: o app WhatsApp MCP ainda não manda nota de voz.

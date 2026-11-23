@@ -180,8 +180,9 @@ O assistente pode responder em **áudio**, com uma voz da ElevenLabs. É opciona
 1. Ele cria uma conta na [ElevenLabs](https://elevenlabs.io) e gera uma chave de API (Perfil › API Keys).
 2. **A chave quem cola é ele**, no `~/.assistente-wpp/assistente.env`, na linha `ELEVENLABS_API_KEY=`. Abra o
    arquivo no editor para ele; não peça a chave no chat e nunca a escreva em comando, repositório ou mensagem.
-3. **Escolher a voz.** Sem escolha, vale uma voz padrão pelo gênero do assistente (Sarah, Eric ou River). Elas são
-   americanas falando português e podem soar artificiais. Para algo mais natural, `& $S vozes [-Genero …]
+3. **Escolher a voz.** Sem escolha, vale uma voz brasileira pelo gênero do assistente (Roberta, Marcelo Costa ou,
+   neutro, Fernanda). Se o plano dele não liberar voz da biblioteca pela API, o `tts` volta `voz_reserva: true`: o
+   áudio saiu numa voz padrão americana, e vale dizer isso a ele. Para escolher outra, `& $S vozes [-Genero …]
    [-Text "calma"]` lista vozes brasileiras. Gere amostras com a mesma fala
    (`& $S tts -Text "<fala>" -Out <arquivo>`, trocando `ASSISTENTE_VOZ_ID` só no ambiente da chamada) e deixe ele
    ouvir antes de gravar. Escolhida: `& $S setup -VozId <id ou link>`. Vozes da biblioteca podem exigir plano pago;

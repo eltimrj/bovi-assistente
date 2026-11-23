@@ -3,6 +3,9 @@
 #   Windows: powershell -NoProfile -ExecutionPolicy Bypass -File tests\assistente.tests.ps1
 #   macOS:   pwsh -NoProfile -File tests/assistente.tests.ps1
 $ErrorActionPreference = 'Stop'
+# Os scripts escrevem em UTF-8; sem isto o PowerShell lê a saída deles na página de código do console e os acentos
+# chegam trocados às comparações.
+[Console]::OutputEncoding = New-Object Text.UTF8Encoding $false
 $repo = Split-Path $PSScriptRoot -Parent
 $scripts = Join-Path $repo 'skills\assistente-wpp\scripts'
 . (Join-Path $scripts 'plataforma.ps1')
@@ -157,9 +160,9 @@ try {
     $r = Run @('tts', '-Text', 'Oi, tudo bem?')
     Check 'voz: sem ELEVENLABS_API_KEY o tts recusa (rc 2)' (($r.Rc -eq 2) -and ((Reason $r) -eq 'voz_sem_chave')) $r.Out
     Check 'voz: vozes sem chave recusa' ((Reason (Run @('vozes'))) -eq 'voz_sem_chave')
-    Check 'voz: sem escolha e sem genero, a voz padrao e a neutra' (((J (Run @('config'))).ASSISTENTE_VOZ_ID_efetivo) -eq 'SAz9YHcvj6GT2YYXdXww')
+    Check 'voz: sem escolha e sem genero, a padrao e a brasileira neutra' (((J (Run @('config'))).ASSISTENTE_VOZ_ID_efetivo) -eq 'KHmfNHtEjHhLK9eER20w')
     $env:ASSISTENTE_GENERO = 'feminino'
-    Check 'voz: assistente feminino sem escolha usa a padrao feminina' (((J (Run @('config'))).ASSISTENTE_VOZ_ID_efetivo) -eq 'EXAVITQu4vr4xnSDxMaL')
+    Check 'voz: assistente feminino sem escolha usa a brasileira feminina' (((J (Run @('config'))).ASSISTENTE_VOZ_ID_efetivo) -eq 'RGymW84CSmfVugnA5tvA')
     $env:ASSISTENTE_GENERO = $null
     $env:ELEVENLABS_API_KEY = 'chave-de-teste'
     $env:ASSISTENTE_VOZ = '0'

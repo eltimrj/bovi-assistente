@@ -775,14 +775,16 @@ function Get-CheckProblems {
 # ---------- voz (ElevenLabs, opcional) ----------
 
 # Tudo fica no .env de cada dono: a chave da ElevenLabs (ELEVENLABS_API_KEY) e a voz escolhida. Sem chave, o
-# assistente segue só em texto. Sem voz escolhida, vale uma voz padrão da ElevenLabs pelo gênero do assistente (as
-# padrão funcionam em qualquer plano; as da biblioteca, como as brasileiras de `vozes`, podem exigir plano pago).
-$VozPadrao = @{ feminino = 'EXAVITQu4vr4xnSDxMaL'; masculino = 'cjVigY5qzO86Huf0OWal'; neutro = 'SAz9YHcvj6GT2YYXdXww' }   # Sarah, Eric, River
+# assistente segue só em texto. Sem voz escolhida, vale uma voz brasileira da biblioteca pelo gênero do assistente.
+# Se o plano do dono não liberar voz da biblioteca pela API, o padrão recua sozinho para uma voz padrão da
+# ElevenLabs (americana falando português), que funciona em qualquer plano. Voz escolhida pelo dono não recua.
+$VozPadrao = @{ feminino = 'RGymW84CSmfVugnA5tvA'; masculino = 'bJrNspxJVFovUxNBQ0wh'; neutro = 'KHmfNHtEjHhLK9eER20w' }        # Roberta, Marcelo Costa, Fernanda
+$VozReserva = @{ feminino = 'EXAVITQu4vr4xnSDxMaL'; masculino = 'cjVigY5qzO86Huf0OWal'; neutro = 'SAz9YHcvj6GT2YYXdXww' }       # Sarah, Eric, River
+function Get-VozGenero { $g = Get-Cfg 'ASSISTENTE_GENERO'; if ($VozPadrao.ContainsKey($g)) { $g } else { 'neutro' } }
 function Get-VozId {
     $v = Get-Cfg 'ASSISTENTE_VOZ_ID'
     if ($v) { return $v }
-    $g = Get-Cfg 'ASSISTENTE_GENERO'
-    if ($VozPadrao.ContainsKey($g)) { $VozPadrao[$g] } else { $VozPadrao['neutro'] }
+    $VozPadrao[(Get-VozGenero)]
 }
 # Aceita o id (20 letras e números) ou um link da ElevenLabs que o contenha (…/voices/<id>, ?voiceId=<id>).
 function ConvertFrom-VozRef([string]$Value) {
@@ -823,6 +825,7 @@ function New-Voz([string]$Spoken, [string]$Dest) {
     $ffmpeg = (Get-Command ffmpeg -ErrorAction SilentlyContinue | Select-Object -First 1).Source
     $fmt = if ($ffmpeg) { 'mp3_44100_128' } else { 'opus_48000_64' }
     $voiceId = Get-VozId
+    $escolhida = [bool](Get-Cfg 'ASSISTENTE_VOZ_ID')
     $body = [ordered]@{ text = $Spoken; model_id = (Get-Cfg 'ASSISTENTE_VOZ_MODELO' 'eleven_multilingual_v2') }
     $vs = [ordered]@{}
     foreach ($pair in @(@('ASSISTENTE_VOZ_ESTABILIDADE', 'stability'), @('ASSISTENTE_VOZ_SIMILARIDADE', 'similarity_boost'), @('ASSISTENTE_VOZ_ESTILO', 'style'), @('ASSISTENTE_VOZ_VELOCIDADE', 'speed'))) {
@@ -833,14 +836,20 @@ function New-Voz([string]$Spoken, [string]$Dest) {
     $json = $body | ConvertTo-Json -Compress
     $src = if ($ffmpeg) { [IO.Path]::ChangeExtension($Dest, '.src.mp3') } else { $Dest }
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Dest) | Out-Null
-    try {
-        Invoke-WebRequest -Uri "https://api.elevenlabs.io/v1/text-to-speech/$voiceId`?output_format=$fmt" -Method Post -Headers @{ 'xi-api-key' = $key; Accept = 'audio/*' } -ContentType 'application/json; charset=utf-8' -Body ($Utf8.GetBytes($json)) -OutFile $src -UseBasicParsing -TimeoutSec 60 | Out-Null
-    }
-    catch {
-        $status = 0; try { $status = [int]$_.Exception.Response.StatusCode } catch { }
-        $why = switch ($status) { 401 { 'voz_chave_recusada' } 402 { 'voz_sem_credito' } 403 { 'voz_nao_liberada_no_plano' } 404 { 'voz_nao_encontrada' } 429 { 'voz_limite' } default { 'voz_falhou' } }
-        Remove-Item -LiteralPath $src -ErrorAction SilentlyContinue
-        return [ordered]@{ ok = $false; reason = $why; http = $status; dica = 'responda em texto; se persistir, avise o dono' }
+    $recuou = $false
+    while ($true) {
+        try {
+            Invoke-WebRequest -Uri "https://api.elevenlabs.io/v1/text-to-speech/$voiceId`?output_format=$fmt" -Method Post -Headers @{ 'xi-api-key' = $key; Accept = 'audio/*' } -ContentType 'application/json; charset=utf-8' -Body ($Utf8.GetBytes($json)) -OutFile $src -UseBasicParsing -TimeoutSec 60 | Out-Null
+            break
+        }
+        catch {
+            $status = 0; try { $status = [int]$_.Exception.Response.StatusCode } catch { }
+            Remove-Item -LiteralPath $src -ErrorAction SilentlyContinue
+            # Padrão brasileiro recusado (plano sem voz da biblioteca pela API, voz retirada): recua uma vez para a reserva.
+            if (-not $escolhida -and -not $recuou -and @(400, 402, 403, 404, 422) -contains $status) { $voiceId = $VozReserva[(Get-VozGenero)]; $recuou = $true; continue }
+            $why = switch ($status) { 401 { 'voz_chave_recusada' } 402 { 'voz_sem_credito' } 403 { 'voz_nao_liberada_no_plano' } 404 { 'voz_nao_encontrada' } 429 { 'voz_limite' } default { 'voz_falhou' } }
+            return [ordered]@{ ok = $false; reason = $why; http = $status; dica = 'responda em texto; se persistir, avise o dono' }
+        }
     }
     if ($ffmpeg) {
         $af = @()
@@ -854,7 +863,7 @@ function New-Voz([string]$Spoken, [string]$Dest) {
         Remove-Item -LiteralPath $src -ErrorAction SilentlyContinue
         if ($code -ne 0 -or -not (Test-Path -LiteralPath $Dest)) { return [ordered]@{ ok = $false; reason = 'voz_conversao_falhou'; dica = 'o ffmpeg não converteu o áudio: responda em texto' } }
     }
-    [ordered]@{ ok = $true; file = $Dest; chars = $Spoken.Length; voice_id = $voiceId; model = $body.model_id }
+    [ordered]@{ ok = $true; file = $Dest; chars = $Spoken.Length; voice_id = $voiceId; model = $body.model_id; voz_reserva = $recuou }
 }
 
 # Cada funcionalidade com o estado real nesta máquina: ativo, inativo ou atenção, e como mudar.
@@ -907,7 +916,7 @@ function Get-HelpReport {
     Add-Item 'Atendimento' 'Retornos prometidos' 'ativo' "$fu pendente(s)" 'o assistente registra sozinho quando promete retorno'
     Add-Item 'Atendimento' 'Recado a pedido seu' 'ativo' 'pelo Claude Code ou escrevendo na conversa consigo mesmo no WhatsApp' '"manda pro Fulano que…"'
     $vozOn = (Get-VozKey) -and (Get-Cfg 'ASSISTENTE_VOZ' '1') -ne '0'
-    $vozDet = if ($vozOn) { "responde em áudio a quem mandou áudio, ou a pedido; voz $(Get-VozId)" + $(if (Get-Cfg 'ASSISTENTE_VOZ_ID') { '' } else { ' (padrão da ElevenLabs)' }) } elseif (Get-VozKey) { 'desligada no .env (ASSISTENTE_VOZ=0)' } else { 'sem chave da ElevenLabs: só texto' }
+    $vozDet = if ($vozOn) { "responde em áudio a quem mandou áudio, ou a pedido; voz $(Get-VozId)" + $(if (Get-Cfg 'ASSISTENTE_VOZ_ID') { '' } else { ' (brasileira padrão pelo gênero)' }) } elseif (Get-VozKey) { 'desligada no .env (ASSISTENTE_VOZ=0)' } else { 'sem chave da ElevenLabs: só texto' }
     Add-Item 'Atendimento' 'Voz (áudio)' $(if ($vozOn) { 'ativo' } else { 'inativo' }) $vozDet '"liga a voz do meu assistente" (chave da ElevenLabs no .env) / "troca a voz para <link>" / "me mostra vozes brasileiras"'
 
     $paused = Test-Path -LiteralPath $PausePath
